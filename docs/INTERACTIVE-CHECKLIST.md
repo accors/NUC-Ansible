@@ -1,8 +1,10 @@
 # ASUS NUC 13 Pro 第一阶段交互检查清单
 
 本清单对应部署指南 **v1.4**。凡标为“人工”的步骤都不得由 Ansible、`expect`、
-`pexpect`、模拟按键或其他包装代劳。命令中的 `<admin>`、地址、域名和 token 必须
-替换为实际值。
+`pexpect`、模拟按键或其他包装代劳。命令中的尖括号占位符必须替换为实际值：
+`<admin>`、地址、域名和 token 按实际环境填写；写成变量名的占位（如
+`<nuc_restic_read_data_subset>`）取该变量在 `group_vars` 中的当前值，不要照抄
+契约默认值。
 
 ## A. Ansible 之前：硬件、Debian 与初始连接
 
@@ -145,12 +147,14 @@
   sudo systemctl list-timers agent-restic-backup.timer --all
   ```
 
-- [ ] **人工：执行完整性检查**，并至少每月重复一次：
+- [ ] **人工：执行完整性检查**，并至少每月重复一次。读取比例取
+  `nuc_restic_read_data_subset` 的当前值（契约默认 `5%`）；改过该变量就按改后的值执行，
+  否则这一步验收的范围和配置对不上：
 
   ```bash
   sudo systemd-run --wait --pipe --collect \
     --property=EnvironmentFile=/etc/restic/agent-nuc.env \
-    /usr/bin/restic check --read-data-subset=5%
+    /usr/bin/restic check --read-data-subset=<nuc_restic_read_data_subset>
   ```
 
 - [ ] 从仓库恢复一个测试文件到临时目录并核对内容；没有演练过恢复的备份不算验收完成。
@@ -167,7 +171,8 @@
 - [ ] Docker `daemon.json` 保留已有键，并启用 `json-file` 的 `10m`/`3` 日志轮转。
 - [ ] `/srv/automation` 与 `/srv/workspaces` 平级；agent-runner 无 sudo、Docker socket
   或管理员 home 访问权。
-- [ ] Restic 最近一次备份、`check --read-data-subset=5%` 和测试恢复均成功，离线密码可用。
+- [ ] Restic 最近一次备份、`check --read-data-subset=<nuc_restic_read_data_subset>`
+  和测试恢复均成功，离线密码可用。
 - [ ] 对已跨过所有人工门禁的完整配置运行 `--check --diff`，无意外变更。
 
 ## H. 离线凭据清单
