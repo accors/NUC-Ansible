@@ -1,0 +1,16 @@
+---
+# inventory.yml 的模板。复制为 inventory.yml 后填入真实值：
+#
+#   cp inventory.example.yml inventory.yml
+#
+# inventory.yml 不提交进 Git（见 .gitignore）。下面的地址取自 RFC 5737
+# 文档网段，不是可用配置。
+all:
+  hosts:
+    agent-nuc:
+      # 首次连接使用家庭 LAN 地址；Tailscale 就绪后可改用 100.x 地址。
+      ansible_host: 192.0.2.10
+      # 须与 group_vars/all/local.yml 的 nuc_admin_user 一致。
+      ansible_user: CHANGE_ME
+      ansible_become: true
+      ansible_python_interpreter: /usr/bin/python3

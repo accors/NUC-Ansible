@@ -1,9 +1,0 @@
----
-all:
-  hosts:
-    agent-nuc:
-      # 首次连接使用家庭 LAN 地址；Tailscale 就绪后可改用 100.x 地址。
-      ansible_host: 192.168.1.50
-      ansible_user: CHANGE_ME
-      ansible_become: true
-      ansible_python_interpreter: /usr/bin/python3
