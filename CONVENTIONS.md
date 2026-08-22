@@ -13,15 +13,17 @@
 
 所有非秘密变量使用 `nuc_` 前缀；秘密使用 `vault_nuc_` 前缀。下表列出允许写入 `group_vars/all/main.yml` 的完整变量集合。role 的 `defaults/main.yml` 只能重述自己使用的这些变量，默认值必须一致。
 
+其中五项是环境相关值：`nuc_admin_user`、`nuc_admin_authorized_keys`、`nuc_lan_cidr`、`nuc_tailscale_ipv4`、`nuc_access_hostname`。它们不写入提交进仓库的 `main.yml`，改由不提交的 `group_vars/all/local.yml` 提供（模板 `local.example.yml` 只含占位符），因此下表中它们的「默认值」列记为 `local.yml`，`main.yml` 与 role 的 `defaults/main.yml` 都不为其设默认值。变量名、类型与语义不受影响。
+
 ### 2.1 主机、账号与网络
 
 | 变量 | 类型 | 默认值 | 来源 | 说明 |
 |---|---|---|---|---|
-| `nuc_admin_user` | string | `CHANGE_ME` | 5、7.1、8.3 | 已由 Debian 安装器创建的个人管理员；Paseo 与交互式 Codex 使用此账号 |
-| `nuc_admin_authorized_keys` | list[string] | `[]` | 7.1 | 至少一把公钥；为空时 `ssh_harden` 必须在关闭密码认证前失败 |
-| `nuc_lan_cidr` | string | `192.168.1.0/24` | 7.2 | 用 `ip route` 实测；只允许该网段访问 SSH |
-| `nuc_tailscale_ipv4` | string | `100.101.102.103` | 8.5、10.2 | 人工授权后用 `tailscale ip -4` 实测；必须属于 `100.64.0.0/10` |
-| `nuc_access_hostname` | string | `agent.example.com` | 8.5、10.4 | Cloudflare Published application 域名；必须进入 Paseo `daemon.hostnames` |
+| `nuc_admin_user` | string | `local.yml` | 5、7.1、8.3 | 已由 Debian 安装器创建的个人管理员；Paseo 与交互式 Codex 使用此账号 |
+| `nuc_admin_authorized_keys` | list[string] | `local.yml` | 7.1 | 至少一把公钥；为空时 `ssh_harden` 必须在关闭密码认证前失败 |
+| `nuc_lan_cidr` | string | `local.yml` | 7.2 | 用 `ip route` 实测；只允许该网段访问 SSH |
+| `nuc_tailscale_ipv4` | string | `local.yml` | 8.5、10.2 | 人工授权后用 `tailscale ip -4` 实测；必须属于 `100.64.0.0/10` |
+| `nuc_access_hostname` | string | `local.yml` | 8.5、10.4 | Cloudflare Published application 域名；必须进入 Paseo `daemon.hostnames` |
 | `nuc_paseo_port` | integer | `6767` | 7.3、8.5 | Paseo 只在 `nuc_tailscale_ipv4` 上监听的端口 |
 | `nuc_agent_runner_user` | string | `agent-runner` | 11.1 | 无 sudo、无 Docker 组的自动化账号 |
 | `nuc_agent_runner_home` | path | `/var/lib/agent-runner` | 11.1、11.3 | agent-runner 的系统 home |
@@ -101,7 +103,7 @@ nuc_restic_excludes:
 
 ### 2.5 Vault 变量
 
-`group_vars/all/vault.example.yml` 只提交占位符；真实的 `vault.yml` 必须经 `ansible-vault` 加密并由 `.gitignore` 排除。
+`group_vars/all/vault.example.yml` 只提交占位符；真实的 `vault.yml` 必须经 `ansible-vault` 加密并由 `.gitignore` 排除。同样地，`inventory.yml` 与 `files/preseed.cfg` 只提交 `.example` 模板，真实文件由 `.gitignore` 排除。
 
 | 变量 | 用途 | 来源 |
 |---|---|---|
