@@ -1,8 +1,8 @@
 ---
 # Paseo role 的公开默认值；运行时事实由本 role 或上游 role 产生。
 nuc_admin_user: CHANGE_ME
-nuc_tailscale_ipv4: "100.101.102.103"
-nuc_access_hostname: agent.example.com
+# nuc_tailscale_ipv4 与 nuc_access_hostname 是环境相关值，由不提交的
+# group_vars/all/local.yml 提供，此处不设默认值。
 nuc_paseo_port: 6767
 
 nuc_architecture: amd64

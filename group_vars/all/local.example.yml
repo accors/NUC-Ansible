@@ -1,0 +1,25 @@
+---
+# group_vars/all/local.yml 的模板。复制为 local.yml 后填入真实值：
+#
+#   cp group_vars/all/local.example.yml group_vars/all/local.yml
+#
+# local.yml 不提交进 Git（见 .gitignore）。此处所有值都是占位符，不是可用配置。
+# 每一项的用途、来源命令与约束见 group_vars/all/main.yml 顶部的注释。
+
+# Debian 安装器创建的管理员账号，需与 inventory.yml 的 ansible_user 一致。
+nuc_admin_user: CHANGE_ME
+
+# 管理员登录公钥，至少一把，整行照抄 .pub 文件内容。
+# ssh_harden 以 exclusive: true 写入，未列出的公钥会被移除。
+nuc_admin_authorized_keys:
+  - "ssh-ed25519 CHANGE_ME_REPLACE_WITH_REAL_PUBLIC_KEY CHANGE_ME"
+
+# 家庭 LAN 网段，在 NUC 上用 `ip route` 实测。填错会在启用 UFW 时阻断 SSH。
+# 占位值取自 RFC 5737 文档网段，直接使用会把自己挡在门外。
+nuc_lan_cidr: 192.0.2.0/24
+
+# `sudo tailscale up` 授权后用 `tailscale ip -4` 实测，必须属于 100.64.0.0/10。
+nuc_tailscale_ipv4: CHANGE_ME
+
+# Cloudflare Published application 的 Hostname，必须与 Dashboard 完全一致。
+nuc_access_hostname: agent.example.invalid

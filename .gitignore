@@ -3,4 +3,7 @@
 __pycache__/
 .venv/
 collections/
+
+# 本机环境值与秘密，一律不提交；对应的 .example 模板才是提交内容。
+group_vars/all/local.yml
 group_vars/all/vault.yml

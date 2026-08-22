@@ -1,10 +1,39 @@
 ---
-# 按目标 NUC 的实际环境修改所有 CHANGE_ME 与示例网络值。
-nuc_admin_user: CHANGE_ME
-nuc_admin_authorized_keys: []
-nuc_lan_cidr: 192.168.1.0/24
-nuc_tailscale_ipv4: 100.101.102.103
-nuc_access_hostname: agent.example.com
+# 本文件提交进 Git，只保留结构与非环境相关的默认值。
+#
+# 环境相关的值（管理员账号、公钥、LAN 网段、Tailscale 地址、Access 域名）
+# 不在此文件中，由不提交的 group_vars/all/local.yml 提供；模板见
+# group_vars/all/local.example.yml。Ansible 按字母序加载 group_vars/all/ 下的
+# 所有 yml 且后者覆盖前者，local 排在 main 之后，因此无需额外配置。
+#
+# 变量清单与来源章节以 CONVENTIONS.md 第 2 节为准。
+#
+# --- 由 local.yml 提供（此处不设默认值，缺失时 play 会以未定义变量中止）---
+#
+# nuc_admin_user            string
+#   已由 Debian 安装器创建的个人管理员账号；Paseo 与交互式 Codex 使用此账号。
+#   与 inventory.yml 的 ansible_user 保持一致。（CONVENTIONS 2.1、PDF 7.1、8.3）
+#
+# nuc_admin_authorized_keys list[string]
+#   管理员登录公钥，至少一把。ssh_harden 以 exclusive: true 写入
+#   ~/.ssh/authorized_keys，因此该列表必须覆盖所有需要保留的公钥（包括
+#   preseed late_command 注入的那把），否则会在关闭密码认证的同一次运行中被移除。
+#   为空时 ssh_harden 必须在关闭密码认证前失败。（CONVENTIONS 2.1、PDF 7.1）
+#
+# nuc_lan_cidr              string
+#   家庭 LAN 网段，在 NUC 上用 `ip route` 实测得到。UFW 只允许该网段访问 SSH，
+#   填错会在 `--tags base` 启用 UFW 时阻断 SSH。（CONVENTIONS 2.1、PDF 7.2）
+#
+# nuc_tailscale_ipv4        string
+#   人工执行 `sudo tailscale up` 授权后，用 `tailscale ip -4` 实测得到的唯一地址。
+#   必须属于 100.64.0.0/10；tailscale role 会与实测值比对，不一致即失败。
+#   Paseo 只在该地址上监听。（CONVENTIONS 2.1、PDF 8.5、10.2）
+#
+# nuc_access_hostname       string
+#   Cloudflare Published application 的 Hostname，必须与 Dashboard 中完全一致，
+#   并会写入 Paseo config.json 的 daemon.hostnames。（CONVENTIONS 2.1、PDF 8.5、10.4）
+
+# --- 以下为非环境相关的默认值，随 repo 提交 ---
 nuc_paseo_port: 6767
 
 nuc_agent_runner_user: agent-runner
