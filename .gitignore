@@ -12,3 +12,7 @@ files/preseed.cfg
 
 # 部署指南 PDF 是附件，不随仓库分发。
 docs/*.pdf
+
+# Agent 工作文件，本地使用，不随仓库分发。
+CLAUDE.md
+CODEX-PROMPT.md
