@@ -16,7 +16,9 @@
 - [ ] 从 NUC 执行 `ip route`，把实际家庭 LAN 网段写入 `nuc_lan_cidr`；把 LAN 地址与
   管理员账号写入 `inventory.yml`。在运行 `base` 前完成此项，避免 UFW 锁死 SSH。
 - [ ] 从控制端验证 `ssh <admin>@<LAN-IP>` 与 `sudo -v` 均成功。
-- [ ] 填完 `group_vars/all/main.yml` 和加密 Vault，并在控制端通过 lint 与 syntax-check。
+- [ ] 按 `README.md` 第 2 节从 `.example` 模板生成 `group_vars/all/local.yml`、
+  `group_vars/all/vault.yml`（加密）、`inventory.yml`、`files/preseed.cfg` 并填完，
+  再在控制端通过 lint 与 syntax-check。
 
 ## B. 基础防护、SSH 与本地服务
 
@@ -167,3 +169,27 @@
   或管理员 home 访问权。
 - [ ] Restic 最近一次备份、`check --read-data-subset=5%` 和测试恢复均成功，离线密码可用。
 - [ ] 对已跨过所有人工门禁的完整配置运行 `--check --diff`，无意外变更。
+
+## H. 离线凭据清单
+
+以下内容必须存在 NUC 之外，且不只有一份。它们同时是 `README.md` 第 6 节灾难恢复顺序的前置条件：
+没有这些，重装后的机器无法重新收敛，备份也无法解密。
+
+- [ ] Restic 仓库地址与密码（`nuc_restic_repository`、`vault_nuc_restic_password`）
+- [ ] Ansible Vault 密码（解密 `group_vars/all/vault.yml` 用）
+- [ ] `group_vars/all/local.yml` 与 `inventory.yml` 的内容，或它们的备份位置
+- [ ] 管理员 SSH 私钥，以及 `files/preseed.cfg` 里那个账号的密码
+- [ ] 随上述内容一并记录：日期、机器标识（`agent-nuc`）、以及这些凭据用来做什么的
+      一句话说明
+
+## I. 设备失窃处置清单（PDF 5.3）
+
+NUC 物理丢失或疑似被入侵时立即执行，顺序无强制依赖但都要做完：
+
+- [ ] 从 tailnet 删除该 NUC 设备
+- [ ] 撤销 Cloudflare Access 会话与设备授权
+- [ ] 轮换该节点的 OpenAI/Codex key（管理员登录态与 agent-runner 的
+      `/etc/credstore.encrypted/agent-codex-api-key` 两处）
+- [ ] 更换 Restic repo 密码并同步离线副本
+- [ ] 检查并轮换所有 Git 远端 deploy key
+- [ ] 轮换 Cloudflare tunnel token 与 Ansible Vault 密码
