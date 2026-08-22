@@ -1,0 +1,142 @@
+---
+# 按目标 NUC 的实际环境修改所有 CHANGE_ME 与示例网络值。
+nuc_admin_user: CHANGE_ME
+nuc_admin_authorized_keys: []
+nuc_lan_cidr: 192.168.1.0/24
+nuc_tailscale_ipv4: 100.101.102.103
+nuc_access_hostname: agent.example.com
+nuc_paseo_port: 6767
+
+nuc_agent_runner_user: agent-runner
+nuc_agent_runner_home: /var/lib/agent-runner
+nuc_agent_runner_workdir: /srv/automation
+nuc_agent_runner_codex_home: /var/lib/agent-runner/codex
+
+nuc_timezone: Australia/Melbourne
+nuc_debian_codename: trixie
+nuc_architecture: amd64
+
+nuc_srv_directories:
+  - path: /srv/workspaces
+    owner: "{{ nuc_admin_user }}"
+    group: "{{ nuc_admin_user }}"
+    mode: "0750"
+    purpose: 长期项目与 Agent 工作区
+    managed_by: srv_layout
+  - path: /srv/worktrees
+    owner: "{{ nuc_admin_user }}"
+    group: "{{ nuc_admin_user }}"
+    mode: "0750"
+    purpose: 可清理重建的 Git worktree
+    managed_by: srv_layout
+  - path: /srv/stacks
+    owner: "{{ nuc_admin_user }}"
+    group: "{{ nuc_admin_user }}"
+    mode: "0750"
+    purpose: Compose 定义、环境模板与服务文档
+    managed_by: srv_layout
+  - path: /srv/data
+    owner: "{{ nuc_admin_user }}"
+    group: "{{ nuc_admin_user }}"
+    mode: "0750"
+    purpose: 服务持久化数据与备份重点
+    managed_by: srv_layout
+  - path: /srv/automation
+    owner: "{{ nuc_agent_runner_user }}"
+    group: "{{ nuc_agent_runner_user }}"
+    mode: "0750"
+    purpose: 受限自动化工作区
+    managed_by: agent_runner
+
+nuc_base_packages:
+  - openssh-server
+  - curl
+  - ca-certificates
+  - gnupg
+  - git
+  - tmux
+  - ripgrep
+  - jq
+  - ufw
+  - unattended-upgrades
+  - nvme-cli
+  - smartmontools
+  - lm-sensors
+  - btop
+  - restic
+
+nuc_sleep_targets:
+  - sleep.target
+  - suspend.target
+  - hibernate.target
+  - hybrid-sleep.target
+
+nuc_unattended_upgrades_auto_reboot: false
+nuc_journald_system_max_use: 1G
+nuc_nvme_device: /dev/nvme0
+nuc_ufw_lan_ssh_port: 22
+nuc_ufw_tailscale_ports:
+  - 22
+  - "{{ nuc_paseo_port }}"
+
+nuc_sshd_hardening_options:
+  PermitRootLogin: "no"
+  PubkeyAuthentication: "yes"
+  PasswordAuthentication: "no"
+  KbdInteractiveAuthentication: "no"
+  X11Forwarding: "no"
+
+nuc_docker_package_versions:
+  docker-ce: ""
+  docker-ce-cli: ""
+  containerd.io: ""
+  docker-buildx-plugin: ""
+  docker-compose-plugin: ""
+nuc_docker_log_max_size: 10m
+nuc_docker_log_max_file: "3"
+
+nuc_codex_installer_url: https://chatgpt.com/codex/install.sh
+nuc_codex_admin_version: latest
+nuc_codex_system_version: latest
+
+nuc_tailscale_channel: stable
+nuc_tailscale_package_version: ""
+
+nuc_nodejs_major: 22
+nuc_nodejs_package_version: ""
+nuc_paseo_cli_version: latest
+nuc_paseo_npm_prefix_relative: .local/npm
+nuc_paseo_password_configured: false
+
+nuc_cloudflared_package_version: ""
+nuc_cloudflared_enable_service: true
+
+nuc_agent_runner_credential_path: /etc/credstore.encrypted/agent-codex-api-key
+nuc_agent_runner_task_prompt: 执行每日自动化任务，并把结果写入 reports/
+nuc_agent_runner_schedule: "*-*-* 07:30:00 Australia/Melbourne"
+nuc_agent_runner_randomized_delay: 10m
+nuc_agent_runner_timer_enabled: false
+
+nuc_restic_package_version: ""
+nuc_restic_repository: CHANGE_ME
+nuc_restic_backup_paths:
+  - /srv
+  - /etc/ssh
+  - /etc/systemd/system
+nuc_restic_excludes:
+  - "**/node_modules"
+  - /srv/worktrees
+  - "**/.cache"
+  - "**/.codex/auth.json"
+nuc_restic_keep:
+  daily: 7
+  weekly: 4
+  monthly: 6
+  yearly: 1
+nuc_restic_schedule: "*-*-* 02:30:00 Australia/Melbourne"
+nuc_restic_randomized_delay: 30m
+nuc_restic_read_data_subset: 5%
+nuc_restic_env_file: /etc/restic/agent-nuc.env
+nuc_restic_wrapper_path: /usr/local/sbin/agent-restic-backup
+nuc_restic_initialize_repository: true
+nuc_restic_enable_timer: true

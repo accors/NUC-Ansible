@@ -1,0 +1,37 @@
+---
+# srv_layout 只重述共享契约中本 role 使用的变量。
+nuc_admin_user: CHANGE_ME
+nuc_agent_runner_user: agent-runner
+
+# 保留共享契约的完整清单；任务只会筛选 managed_by=srv_layout 的条目。
+nuc_srv_directories:
+  - path: /srv/workspaces
+    owner: "{{ nuc_admin_user }}"
+    group: "{{ nuc_admin_user }}"
+    mode: "0750"
+    purpose: 长期项目与 Agent 工作区
+    managed_by: srv_layout
+  - path: /srv/worktrees
+    owner: "{{ nuc_admin_user }}"
+    group: "{{ nuc_admin_user }}"
+    mode: "0750"
+    purpose: 可清理重建的 Git worktree
+    managed_by: srv_layout
+  - path: /srv/stacks
+    owner: "{{ nuc_admin_user }}"
+    group: "{{ nuc_admin_user }}"
+    mode: "0750"
+    purpose: Compose 定义、环境模板与服务文档
+    managed_by: srv_layout
+  - path: /srv/data
+    owner: "{{ nuc_admin_user }}"
+    group: "{{ nuc_admin_user }}"
+    mode: "0750"
+    purpose: 服务持久化数据与备份重点
+    managed_by: srv_layout
+  - path: /srv/automation
+    owner: "{{ nuc_agent_runner_user }}"
+    group: "{{ nuc_agent_runner_user }}"
+    mode: "0750"
+    purpose: 受限自动化工作区
+    managed_by: agent_runner

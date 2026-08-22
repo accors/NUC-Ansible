@@ -1,0 +1,16 @@
+[Unit]
+Description=Paseo daemon
+
+[Service]
+Type=simple
+# PATH 必须包含 codex role 探测到的实际目录与管理员的 Paseo npm bin。
+Environment=PATH={{ nuc_paseo_unit_path }}
+# Tailscale 地址未就绪时让 daemon 保持在 systemd 监督下等待。
+ExecStartPre=/bin/sh -c 'until /usr/bin/tailscale ip -4 >/dev/null 2>&1; do sleep 2; done'
+ExecStart={{ nuc_admin_home }}/{{ nuc_paseo_npm_prefix_relative }}/bin/paseo daemon start --foreground
+Restart=on-failure
+RestartSec=10s
+TimeoutStartSec=120s
+
+[Install]
+WantedBy=default.target

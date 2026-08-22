@@ -1,0 +1,397 @@
+---
+- name: 探测管理员的 passwd 条目
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ nuc_admin_user }}"
+    fail_key: false
+  register: _paseo_admin_passwd
+  failed_when: false
+  changed_when: false
+
+- name: 在管理员不存在时明确失败
+  ansible.builtin.fail:
+    msg: >-
+      未能从 getent passwd 探测管理员 {{ nuc_admin_user }}；请确认 nuc_admin_user
+      指向已由 Debian 安装器创建的个人管理员账户。
+  when: >-
+    _paseo_admin_passwd is failed or
+    nuc_admin_user not in (ansible_facts.getent_passwd | default({}))
+
+- name: 写入管理员 UID 与 home 运行时事实
+  ansible.builtin.set_fact:
+    nuc_admin_uid: "{{ ansible_facts.getent_passwd[nuc_admin_user][1] | int }}"
+    nuc_admin_home: "{{ ansible_facts.getent_passwd[nuc_admin_user][4] }}"
+
+- name: 校验管理员 UID 与 home 事实
+  ansible.builtin.fail:
+    msg: >-
+      getent passwd 对 {{ nuc_admin_user }} 返回了无效的 UID 或 home；
+      Paseo 不能在未探测真实用户运行时目录的情况下继续。
+  when: >-
+    nuc_admin_uid | int <= 0 or
+    (nuc_admin_home | trim | length) == 0 or
+    not ((nuc_admin_home | trim) is match('^/'))
+
+- name: 检查 Codex role 的管理员路径事实
+  ansible.builtin.fail:
+    msg: >-
+      上游 codex role 未提供 nuc_codex_admin_bin 与 nuc_codex_admin_bin_dir；
+      请先运行 codex tag，安装管理员 Codex 后再运行 paseo tag。
+  when: >-
+    (nuc_codex_admin_bin | default('') | trim | length) == 0 or
+    (nuc_codex_admin_bin_dir | default('') | trim | length) == 0
+
+- name: 检查上游 Codex 可执行文件
+  ansible.builtin.stat:
+    path: "{{ nuc_codex_admin_bin }}"
+  register: _paseo_codex_bin_stat
+
+- name: 在 Codex 可执行文件不存在时明确失败
+  ansible.builtin.fail:
+    msg: >-
+      nuc_codex_admin_bin={{ nuc_codex_admin_bin }} 不是可执行文件；
+      请先完成 codex role 的管理员 CLI 安装。
+  when: >-
+    not _paseo_codex_bin_stat.stat.exists or
+    not _paseo_codex_bin_stat.stat.isreg or
+    not _paseo_codex_bin_stat.stat.executable
+
+- name: 检查上游 Codex bin 目录事实
+  ansible.builtin.stat:
+    path: "{{ nuc_codex_admin_bin_dir }}"
+  register: _paseo_codex_bin_dir_stat
+
+- name: 在 Codex bin 目录不存在时明确失败
+  ansible.builtin.fail:
+    msg: >-
+      nuc_codex_admin_bin_dir={{ nuc_codex_admin_bin_dir }} 不是目录；
+      Paseo unit 不会使用任何固定的 Codex 路径回退值。
+  when: >-
+    not _paseo_codex_bin_dir_stat.stat.exists or
+    not _paseo_codex_bin_dir_stat.stat.isdir
+
+- name: 检查上游 Tailscale 地址事实
+  ansible.builtin.fail:
+    msg: >-
+      上游 tailscale role 未提供 nuc_tailscale_detected_ipv4；请先完成设备授权，
+      再以 tailscale tag 重跑并校验 tailscale ip -4。
+  when: (nuc_tailscale_detected_ipv4 | default('') | trim | length) == 0
+
+- name: 校验 Tailscale 地址与清单配置一致
+  ansible.builtin.fail:
+    msg: >-
+      tailscale ip -4 探测值 {{ nuc_tailscale_detected_ipv4 }} 与
+      nuc_tailscale_ipv4={{ nuc_tailscale_ipv4 }} 不一致；请修正清单或重新授权设备。
+  when: nuc_tailscale_detected_ipv4 != nuc_tailscale_ipv4
+
+- name: 检查管理员 Codex 登录状态
+  ansible.builtin.command:
+    argv:
+      - "{{ nuc_codex_admin_bin }}"
+      - login
+      - status
+  become: true
+  become_user: "{{ nuc_admin_user }}"
+  environment:
+    HOME: "{{ nuc_admin_home }}"
+    PATH: "{{ nuc_codex_admin_bin_dir }}:/usr/local/bin:/usr/bin:/bin"
+  register: _paseo_codex_login_status
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode or _paseo_codex_bin_stat.stat.exists
+
+- name: 在管理员未登录 Codex 时明确失败
+  ansible.builtin.fail:
+    msg: >-
+      管理员 Codex 尚未登录或 login status 失败；请以 {{ nuc_admin_user }} 运行
+      codex login，然后运行 codex login status，再重跑 paseo tag（PDF 8.1、8.5）。
+  when: >-
+    not (_paseo_codex_login_status.skipped | default(false)) and
+    _paseo_codex_login_status.rc != 0
+
+- name: 创建 NodeSource APT keyring 目录
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: 检查 NodeSource 二进制 keyring 是否存在
+  ansible.builtin.stat:
+    path: /etc/apt/keyrings/nodesource.gpg
+  register: _paseo_nodesource_keyring_stat
+
+- name: 下载 NodeSource 官方签名公钥
+  ansible.builtin.get_url:
+    url: https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key
+    dest: /etc/apt/keyrings/nodesource-repo.asc
+    owner: root
+    group: root
+    mode: '0644'
+    validate_certs: true
+  register: _paseo_nodesource_key
+
+- name: 将 NodeSource 公钥转换为 APT keyring
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/gpg
+      - --dearmor
+      - --yes
+      - --output
+      - /etc/apt/keyrings/nodesource.gpg
+      - /etc/apt/keyrings/nodesource-repo.asc
+  when: >-
+    _paseo_nodesource_key.changed or
+    not _paseo_nodesource_keyring_stat.stat.exists
+  changed_when: true
+
+- name: 固定 NodeSource APT keyring 权限
+  ansible.builtin.file:
+    path: /etc/apt/keyrings/nodesource.gpg
+    state: file
+    owner: root
+    group: root
+    mode: '0644'
+  when: >-
+    not ansible_check_mode or
+    _paseo_nodesource_keyring_stat.stat.exists
+
+- name: 配置 NodeSource Node.js APT 仓库
+  ansible.builtin.apt_repository:
+    repo: >-
+      deb [arch={{ nuc_architecture }} signed-by=/etc/apt/keyrings/nodesource.gpg]
+      https://deb.nodesource.com/node_{{ nuc_nodejs_major }}.x nodistro main
+    filename: nodesource
+    state: present
+    update_cache: true
+
+- name: 安装 Node.js（NodeSource 包内提供 npm）
+  ansible.builtin.apt:
+    name: "{{ 'nodejs=' ~ nuc_nodejs_package_version if (nuc_nodejs_package_version | length) > 0 else 'nodejs' }}"
+    state: present
+
+- name: 检查 Node.js 二进制文件
+  ansible.builtin.stat:
+    path: /usr/bin/node
+  register: _paseo_node_binary_stat
+
+- name: 检查 npm 二进制文件
+  ansible.builtin.stat:
+    path: /usr/bin/npm
+  register: _paseo_npm_binary_stat
+
+- name: 检查已安装 Node.js 主版本
+  ansible.builtin.command:
+    cmd: node --version
+  register: _paseo_node_version
+  changed_when: false
+  failed_when: >-
+    _paseo_node_version.rc != 0 or
+    not ((_paseo_node_version.stdout | trim) is
+    match('^v' ~ (nuc_nodejs_major | string) ~ '\\.'))
+  when: not ansible_check_mode or _paseo_node_binary_stat.stat.exists
+
+- name: 检查 npm 可执行文件
+  ansible.builtin.command:
+    cmd: npm --version
+  register: _paseo_npm_version
+  changed_when: false
+  failed_when: _paseo_npm_version.rc != 0 or (_paseo_npm_version.stdout | trim | length) == 0
+  when: not ansible_check_mode or _paseo_npm_binary_stat.stat.exists
+
+- name: 创建管理员 npm prefix 目录
+  ansible.builtin.file:
+    path: "{{ nuc_admin_home }}/{{ nuc_paseo_npm_prefix_relative }}"
+    state: directory
+    owner: "{{ nuc_admin_user }}"
+    group: "{{ nuc_admin_user }}"
+    mode: '0755'
+
+- name: 读取管理员当前 npm prefix
+  ansible.builtin.command:
+    cmd: npm config get prefix
+  become: true
+  become_user: "{{ nuc_admin_user }}"
+  environment:
+    HOME: "{{ nuc_admin_home }}"
+    PATH: "/usr/local/bin:/usr/bin:/bin"
+  register: _paseo_current_npm_prefix
+  changed_when: false
+  failed_when: _paseo_current_npm_prefix.rc != 0
+  when: not ansible_check_mode or _paseo_npm_binary_stat.stat.exists
+
+- name: 设置管理员 npm prefix
+  ansible.builtin.command:
+    argv:
+      - npm
+      - config
+      - set
+      - prefix
+      - "{{ nuc_admin_home }}/{{ nuc_paseo_npm_prefix_relative }}"
+  become: true
+  become_user: "{{ nuc_admin_user }}"
+  environment:
+    HOME: "{{ nuc_admin_home }}"
+    PATH: "/usr/local/bin:/usr/bin:/bin"
+  when: >-
+    (not ansible_check_mode or _paseo_npm_binary_stat.stat.exists) and
+    (_paseo_current_npm_prefix.stdout | trim) !=
+    (nuc_admin_home ~ '/' ~ nuc_paseo_npm_prefix_relative)
+  changed_when: true
+
+- name: 幂等维护管理员 profile 的 Paseo PATH
+  ansible.builtin.lineinfile:
+    path: "{{ nuc_admin_home }}/.profile"
+    regexp: '^export PATH="\$HOME/{{ nuc_paseo_npm_prefix_relative | regex_escape }}/bin:\$PATH"$'
+    line: 'export PATH="$HOME/{{ nuc_paseo_npm_prefix_relative }}/bin:$PATH"'
+    create: true
+    owner: "{{ nuc_admin_user }}"
+    group: "{{ nuc_admin_user }}"
+    mode: '0644'
+    insertafter: EOF
+
+- name: 检查管理员已安装的 Paseo CLI
+  ansible.builtin.command:
+    argv:
+      - npm
+      - list
+      - --global
+      - --depth=0
+      - --json
+      - '@getpaseo/cli'
+  become: true
+  become_user: "{{ nuc_admin_user }}"
+  environment:
+    HOME: "{{ nuc_admin_home }}"
+    PATH: "{{ nuc_admin_home }}/{{ nuc_paseo_npm_prefix_relative }}/bin:/usr/local/bin:/usr/bin:/bin"
+  register: _paseo_cli_status
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode or _paseo_npm_binary_stat.stat.exists
+
+- name: 以管理员安装 Paseo CLI
+  ansible.builtin.command:
+    argv:
+      - npm
+      - install
+      - --global
+      - --engine-strict
+      - "@getpaseo/cli@{{ nuc_paseo_cli_version }}"
+  become: true
+  become_user: "{{ nuc_admin_user }}"
+  environment:
+    HOME: "{{ nuc_admin_home }}"
+    PATH: "{{ nuc_admin_home }}/{{ nuc_paseo_npm_prefix_relative }}/bin:/usr/local/bin:/usr/bin:/bin"
+  when: >-
+    (not ansible_check_mode or _paseo_npm_binary_stat.stat.exists) and
+    (_paseo_cli_status.rc != 0 or
+    (
+      nuc_paseo_cli_version != 'latest' and
+      (_paseo_cli_status.stdout | default('{}') | from_json).get('dependencies', {}).get('@getpaseo/cli', {}).get('version', '')
+      != nuc_paseo_cli_version
+    ))
+  changed_when: true
+
+- name: 检查管理员 Paseo 二进制文件
+  ansible.builtin.stat:
+    path: "{{ nuc_admin_home }}/{{ nuc_paseo_npm_prefix_relative }}/bin/paseo"
+  register: _paseo_cli_binary_stat
+
+- name: 检查管理员 Paseo 命令
+  ansible.builtin.command:
+    cmd: paseo --version
+  become: true
+  become_user: "{{ nuc_admin_user }}"
+  environment:
+    HOME: "{{ nuc_admin_home }}"
+    PATH: "{{ nuc_admin_home }}/{{ nuc_paseo_npm_prefix_relative }}/bin:/usr/local/bin:/usr/bin:/bin"
+  register: _paseo_cli_version_check
+  changed_when: false
+  failed_when: _paseo_cli_version_check.rc != 0
+  when: not ansible_check_mode or _paseo_cli_binary_stat.stat.exists
+
+- name: 创建 Paseo 配置目录
+  ansible.builtin.file:
+    path: "{{ nuc_admin_home }}/.paseo"
+    state: directory
+    owner: "{{ nuc_admin_user }}"
+    group: "{{ nuc_admin_user }}"
+    mode: '0700'
+
+- name: 写入 Paseo 唯一配置来源
+  ansible.builtin.template:
+    src: config.json.j2
+    dest: "{{ nuc_admin_home }}/.paseo/config.json"
+    owner: "{{ nuc_admin_user }}"
+    group: "{{ nuc_admin_user }}"
+    mode: '0600'
+  notify: paseo | restart paseo
+
+- name: 在未完成人工设密码时停止
+  ansible.builtin.fail:
+    msg: >-
+      Paseo config.json 已写入，但 nuc_paseo_password_configured=false；请以管理员
+      {{ nuc_admin_user }} 运行 paseo daemon set-password（PDF 8.5），确认内层密码后
+      将该变量改为 true，再重跑 paseo tag。服务不会在此门禁前启用。
+  when: not (nuc_paseo_password_configured | bool)
+
+- name: 探测管理员 linger 状态
+  ansible.builtin.command:
+    cmd: /usr/bin/loginctl show-user {{ nuc_admin_user }} -p Linger --value
+  become: true
+  register: _paseo_linger_status
+  changed_when: false
+  failed_when: _paseo_linger_status.rc != 0
+
+- name: 先为管理员启用 linger
+  ansible.builtin.command:
+    cmd: /usr/bin/loginctl enable-linger {{ nuc_admin_user }}
+  become: true
+  when: _paseo_linger_status.stdout | trim != 'yes'
+  changed_when: true
+
+- name: 创建管理员 systemd user unit 目录
+  ansible.builtin.file:
+    path: "{{ nuc_admin_home }}/.config/systemd/user"
+    state: directory
+    owner: "{{ nuc_admin_user }}"
+    group: "{{ nuc_admin_user }}"
+    mode: '0755'
+
+- name: 组装含真实 Codex 路径的 Paseo unit PATH 事实
+  ansible.builtin.set_fact:
+    nuc_paseo_unit_path: "{{ nuc_codex_admin_bin_dir }}:{{ nuc_admin_home }}/{{ nuc_paseo_npm_prefix_relative }}/bin:/usr/local/bin:/usr/bin:/bin"
+
+- name: 写入 Paseo systemd user unit
+  ansible.builtin.template:
+    src: paseo.service.j2
+    dest: "{{ nuc_admin_home }}/.config/systemd/user/paseo.service"
+    owner: "{{ nuc_admin_user }}"
+    group: "{{ nuc_admin_user }}"
+    mode: '0644'
+  notify:
+    - paseo | daemon-reload user units
+    - paseo | restart paseo
+
+- name: 检查 Paseo user unit 文件
+  ansible.builtin.stat:
+    path: "{{ nuc_admin_home }}/.config/systemd/user/paseo.service"
+  register: _paseo_unit_file_stat
+
+- name: 启用并启动 Paseo user unit
+  ansible.builtin.systemd_service:
+    name: paseo.service
+    enabled: true
+    state: started
+    daemon_reload: true
+    scope: user
+  become: true
+  become_user: "{{ nuc_admin_user }}"
+  environment:
+    HOME: "{{ nuc_admin_home }}"
+    XDG_RUNTIME_DIR: "/run/user/{{ nuc_admin_uid }}"
+    PATH: "{{ nuc_paseo_unit_path }}"
+  when: >-
+    not ansible_check_mode or
+    (_paseo_unit_file_stat.stat.exists | default(false))

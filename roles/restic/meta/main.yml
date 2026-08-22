@@ -1,0 +1,8 @@
+---
+galaxy_info:
+  role_name: restic
+  author: agent-nuc
+  description: 安装并配置 Restic 加密备份、仓库初始化和 nightly systemd timer
+  license: MIT
+  min_ansible_version: "2.16"
+dependencies: []

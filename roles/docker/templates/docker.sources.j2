@@ -1,0 +1,7 @@
+{# Docker 官方 Debian deb822 仓库定义。 #}
+Types: deb
+URIs: https://download.docker.com/linux/debian
+Suites: {{ nuc_debian_codename }}
+Components: stable
+Architectures: {{ nuc_architecture }}
+Signed-By: /etc/apt/keyrings/docker.asc

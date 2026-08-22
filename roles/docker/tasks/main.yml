@@ -1,0 +1,127 @@
+---
+# docker —— PDF 9.2 / 9.3：官方仓库、Docker Engine 与 json-file 日志轮转。
+
+- name: 安装 Docker APT 仓库所需的 CA 证书
+  ansible.builtin.apt:
+    name: ca-certificates
+    state: present
+    update_cache: true
+
+- name: 确保 APT keyring 目录存在
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: 下载 Docker 官方 APT key
+  ansible.builtin.get_url:
+    url: https://download.docker.com/linux/debian/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    owner: root
+    group: root
+    mode: "0644"
+    force: false
+
+- name: 配置 Docker 官方 Debian deb822 仓库
+  ansible.builtin.template:
+    src: docker.sources.j2
+    dest: /etc/apt/sources.list.d/docker.sources
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: 更新 Docker APT 仓库索引
+  ansible.builtin.apt:
+    update_cache: true
+
+- name: 按契约版本安装 Docker 软件包
+  ansible.builtin.apt:
+    name: >-
+      {{
+        item.key
+        if (item.value is none or (item.value | string | trim) == '')
+        else item.key ~ '=' ~ (item.value | string)
+      }}
+    state: present
+  loop: "{{ nuc_docker_package_versions | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: 确保 Docker 配置目录存在
+  ansible.builtin.file:
+    path: /etc/docker
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: 探测现有 daemon.json
+  ansible.builtin.stat:
+    path: /etc/docker/daemon.json
+  register: _docker_daemon_stat
+
+- name: 没有现有 daemon.json 时从空对象开始
+  ansible.builtin.set_fact:
+    _docker_existing_daemon: {}
+  when: not _docker_daemon_stat.stat.exists
+
+- name: 解析现有 daemon.json
+  when: _docker_daemon_stat.stat.exists
+  block:
+    - name: 读取现有 daemon.json
+      ansible.builtin.slurp:
+        src: /etc/docker/daemon.json
+      register: _docker_daemon_slurp
+
+    - name: 将现有 daemon.json 解析为 JSON 对象
+      ansible.builtin.set_fact:
+        _docker_existing_daemon: "{{ _docker_daemon_slurp.content | b64decode | from_json }}"
+  rescue:
+    - name: 现有 daemon.json 无效时明确中止
+      ansible.builtin.fail:
+        msg: >-
+          /etc/docker/daemon.json 不是合法 JSON，已停止而未覆盖原文件。
+          请先人工修复该文件，再重跑 docker role。
+- name: 校验 daemon.json 为对象且 log-opts 可递归合并
+  ansible.builtin.assert:
+    that:
+      - _docker_existing_daemon is mapping
+      - _docker_existing_daemon.get('log-opts', {}) is mapping
+    fail_msg: >-
+      /etc/docker/daemon.json 必须是 JSON 对象，且 log-opts（若存在）必须是对象；
+      为避免丢失现有设置，未写入合并结果。
+
+- name: 递归合并 Docker 日志轮转配置并保留已有键
+  ansible.builtin.set_fact:
+    _docker_merged_daemon: >-
+      {{
+        _docker_existing_daemon
+        | combine(
+            {
+              'log-driver': 'json-file',
+              'log-opts': {
+                'max-size': nuc_docker_log_max_size | string,
+                'max-file': nuc_docker_log_max_file | string
+              }
+            },
+            recursive=true
+          )
+      }}
+
+- name: 写入递归合并后的 daemon.json
+  ansible.builtin.template:
+    src: daemon.json.j2
+    dest: /etc/docker/daemon.json
+    owner: root
+    group: root
+    mode: "0644"
+    validate: /usr/bin/python3 -m json.tool %s
+  notify: docker | restart docker
+
+- name: 启用并启动 Docker
+  ansible.builtin.systemd_service:
+    name: docker
+    enabled: true
+    state: started

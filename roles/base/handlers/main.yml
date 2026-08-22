@@ -1,0 +1,16 @@
+---
+# 处理本 role 受控配置的服务变更。
+- name: "base | restart unattended-upgrades"
+  ansible.builtin.systemd_service:
+    name: unattended-upgrades
+    state: restarted
+
+- name: "base | restart smartd"
+  ansible.builtin.systemd_service:
+    name: smartd
+    state: restarted
+
+- name: "base | restart systemd-journald"
+  ansible.builtin.systemd_service:
+    name: systemd-journald
+    state: restarted

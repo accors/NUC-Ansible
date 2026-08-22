@@ -1,0 +1,38 @@
+---
+- name: 将 ASUS NUC 13 Pro 收敛到第一阶段 Agent 节点
+  hosts: agent-nuc
+  become: true
+  gather_facts: true
+
+  # role 顺序就是依赖关系；禁止改用 meta/dependencies。
+  roles:
+    - role: base
+      tags:
+        - base
+    - role: ssh_harden
+      tags:
+        - ssh_harden
+    - role: srv_layout
+      tags:
+        - srv_layout
+    - role: docker
+      tags:
+        - docker
+    - role: codex
+      tags:
+        - codex
+    - role: tailscale
+      tags:
+        - tailscale
+    - role: paseo
+      tags:
+        - paseo
+    - role: cloudflared
+      tags:
+        - cloudflared
+    - role: agent_runner
+      tags:
+        - agent_runner
+    - role: restic
+      tags:
+        - restic

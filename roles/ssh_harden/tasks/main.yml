@@ -1,0 +1,112 @@
+---
+# ssh_harden —— PDF 7.1：先验证密钥，再关闭密码认证。
+
+- name: 在任何 SSH 加固前校验管理员公钥
+  ansible.builtin.assert:
+    that:
+      - nuc_admin_authorized_keys is sequence
+      - nuc_admin_authorized_keys is not string
+      - nuc_admin_authorized_keys | length > 0
+    fail_msg: >-
+      nuc_admin_authorized_keys 为空或格式无效。根据 PDF 7.1，必须先把公钥加入
+      管理员 ~/.ssh/authorized_keys，并由人工在另一个终端确认密钥登录后，才能关闭密码登录；
+      ssh_harden 已停止，未写入 /etc/ssh/sshd_config.d/10-hardening.conf。
+
+- name: 探测管理员账号的 passwd 条目
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ nuc_admin_user }}"
+    fail_key: false
+  register: _ssh_harden_admin_passwd
+  changed_when: false
+
+- name: 校验管理员账号及其 home 信息
+  ansible.builtin.assert:
+    that:
+      - nuc_admin_user in ansible_facts.getent_passwd
+      - ansible_facts.getent_passwd[nuc_admin_user] | length >= 5
+      - ansible_facts.getent_passwd[nuc_admin_user][4] | string | length > 0
+      - (ansible_facts.getent_passwd[nuc_admin_user][4] | string).startswith('/')
+    fail_msg: >-
+      未找到有效的 nuc_admin_user={{ nuc_admin_user }} 或其 home；
+      ssh_harden 未写入任何 SSH 加固配置。
+
+- name: 保存管理员 home 与主组 GID（仅 role 私有 fact）
+  ansible.builtin.set_fact:
+    _ssh_harden_admin_home: "{{ ansible_facts.getent_passwd[nuc_admin_user][4] }}"
+    _ssh_harden_admin_gid: "{{ ansible_facts.getent_passwd[nuc_admin_user][2] | string }}"
+
+- name: 探测系统 group 数据库
+  ansible.builtin.getent:
+    database: group
+  register: _ssh_harden_groups
+  changed_when: false
+
+- name: 根据管理员主组 GID 解析组名
+  ansible.builtin.set_fact:
+    _ssh_harden_admin_group: "{{ item.key }}"
+  loop: "{{ ansible_facts.getent_group | dict2items }}"
+  when: (item.value[1] | string) == (_ssh_harden_admin_gid | string)
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: 校验管理员主组信息
+  ansible.builtin.assert:
+    that:
+      - _ssh_harden_admin_group is defined
+      - _ssh_harden_admin_group | string | length > 0
+    fail_msg: >-
+      无法根据管理员 GID={{ _ssh_harden_admin_gid }} 解析主组；
+      ssh_harden 未写入任何 SSH 加固配置。
+
+- name: 创建管理员 .ssh 目录
+  ansible.builtin.file:
+    path: "{{ _ssh_harden_admin_home }}/.ssh"
+    state: directory
+    owner: "{{ nuc_admin_user }}"
+    group: "{{ _ssh_harden_admin_group }}"
+    mode: "0700"
+
+- name: 幂等落地管理员 authorized_keys 公钥
+  ansible.posix.authorized_key:
+    user: "{{ nuc_admin_user }}"
+    path: "{{ _ssh_harden_admin_home }}/.ssh/authorized_keys"
+    key: "{{ nuc_admin_authorized_keys | join('\n') }}"
+    state: present
+    exclusive: true
+    manage_dir: false
+
+- name: 确保管理员 authorized_keys 权限与所有权正确
+  ansible.builtin.file:
+    path: "{{ _ssh_harden_admin_home }}/.ssh/authorized_keys"
+    state: file
+    owner: "{{ nuc_admin_user }}"
+    group: "{{ _ssh_harden_admin_group }}"
+    mode: "0600"
+
+- name: 校验 SSH 加固选项为非空映射
+  ansible.builtin.assert:
+    that:
+      - nuc_sshd_hardening_options is mapping
+      - nuc_sshd_hardening_options | length > 0
+    fail_msg: >-
+      nuc_sshd_hardening_options 必须是非空映射；为避免生成不完整配置，
+      ssh_harden 未写入 sshd 加固文件。
+
+- name: 确保 sshd 配置片段目录存在
+  ansible.builtin.file:
+    path: /etc/ssh/sshd_config.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: 写入 SSH 加固配置（公钥已落地后）
+  ansible.builtin.template:
+    src: 10-hardening.conf.j2
+    dest: /etc/ssh/sshd_config.d/10-hardening.conf
+    owner: root
+    group: root
+    mode: "0644"
+    validate: /usr/sbin/sshd -t -f %s
+  notify: "ssh_harden | reload ssh"

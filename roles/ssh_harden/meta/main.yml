@@ -1,0 +1,8 @@
+---
+galaxy_info:
+  role_name: ssh_harden
+  author: agent-nuc
+  description: 先落地管理员公钥再应用 SSH 加固配置
+  license: MIT
+  min_ansible_version: "2.16"
+dependencies: []

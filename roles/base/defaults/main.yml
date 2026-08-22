@@ -1,0 +1,34 @@
+---
+# base 只重述共享契约中本 role 使用的变量。
+nuc_base_packages:
+  - openssh-server
+  - curl
+  - ca-certificates
+  - gnupg
+  - git
+  - tmux
+  - ripgrep
+  - jq
+  - ufw
+  - unattended-upgrades
+  - nvme-cli
+  - smartmontools
+  - lm-sensors
+  - btop
+  - restic
+
+nuc_sleep_targets:
+  - sleep.target
+  - suspend.target
+  - hibernate.target
+  - hybrid-sleep.target
+
+nuc_unattended_upgrades_auto_reboot: false
+nuc_journald_system_max_use: 1G
+nuc_nvme_device: /dev/nvme0
+nuc_lan_cidr: 192.168.1.0/24
+nuc_ufw_lan_ssh_port: 22
+nuc_paseo_port: 6767
+nuc_ufw_tailscale_ports:
+  - 22
+  - "{{ nuc_paseo_port }}"

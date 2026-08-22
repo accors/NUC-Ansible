@@ -1,0 +1,13 @@
+[Unit]
+Description=Nightly Restic backup for agent-nuc
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists={{ nuc_restic_env_file }}
+
+[Service]
+Type=oneshot
+EnvironmentFile={{ nuc_restic_env_file }}
+ExecStart={{ nuc_restic_wrapper_path }}
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

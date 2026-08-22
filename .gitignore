@@ -1,0 +1,6 @@
+.DS_Store
+*.retry
+__pycache__/
+.venv/
+collections/
+group_vars/all/vault.yml

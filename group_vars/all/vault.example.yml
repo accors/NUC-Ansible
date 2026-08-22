@@ -1,0 +1,4 @@
+---
+# 复制为 vault.yml，填写真实值，然后立即执行 ansible-vault encrypt。
+vault_nuc_restic_password: CHANGE_ME
+vault_nuc_cloudflared_tunnel_token: CHANGE_ME

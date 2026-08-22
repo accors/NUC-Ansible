@@ -1,0 +1,84 @@
+---
+# srv_layout —— PDF 9.1：只创建管理员拥有的四个 /srv 目录。
+
+- name: 校验管理员变量非空
+  ansible.builtin.assert:
+    that:
+      - nuc_admin_user is string
+      - nuc_admin_user | trim | length > 0
+    fail_msg: "nuc_admin_user 必须是非空字符串；srv_layout 未创建任何目录。"
+
+- name: 探测管理员账号
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ nuc_admin_user }}"
+    fail_key: false
+  register: _srv_layout_admin_passwd
+  changed_when: false
+
+- name: 校验管理员账号存在
+  ansible.builtin.assert:
+    that:
+      - nuc_admin_user in ansible_facts.getent_passwd
+    fail_msg: >-
+      未找到 nuc_admin_user={{ nuc_admin_user }}；srv_layout 未创建任何目录。
+
+- name: 校验共享目录清单为列表
+  ansible.builtin.assert:
+    that:
+      - nuc_srv_directories is sequence
+      - nuc_srv_directories is not string
+    fail_msg: "nuc_srv_directories 必须是目录字典列表；srv_layout 未创建任何目录。"
+
+- name: 设置 srv_layout 允许的路径集合
+  ansible.builtin.set_fact:
+    _srv_layout_expected_paths:
+      - /srv/workspaces
+      - /srv/worktrees
+      - /srv/stacks
+      - /srv/data
+
+- name: 只筛选由 srv_layout 管理的目录
+  ansible.builtin.set_fact:
+    _srv_layout_managed_directories: >-
+      {{
+        nuc_srv_directories
+        | selectattr('managed_by', 'equalto', 'srv_layout')
+        | list
+      }}
+
+- name: 校验 srv_layout 目录路径集合
+  ansible.builtin.assert:
+    that:
+      - _srv_layout_managed_directories | length == 4
+      - >-
+        (_srv_layout_managed_directories | map(attribute='path') | list | sort)
+        == (_srv_layout_expected_paths | sort)
+    fail_msg: >-
+      nuc_srv_directories 中 managed_by=srv_layout 的路径必须严格为
+      /srv/workspaces、/srv/worktrees、/srv/stacks、/srv/data；未创建任何目录。
+
+- name: 校验 srv_layout 目录的所有权与权限
+  ansible.builtin.assert:
+    that:
+      - item.path in _srv_layout_expected_paths
+      - item.owner == nuc_admin_user
+      - item.group == nuc_admin_user
+      - item.mode | string == '0750'
+    fail_msg: >-
+      srv_layout 目录 {{ item.path | default('(unknown)') }} 必须由
+      {{ nuc_admin_user }}:{{ nuc_admin_user }} 拥有且权限为 0750；未创建任何目录。
+  loop: "{{ _srv_layout_managed_directories }}"
+  loop_control:
+    label: "{{ item.path | default('(unknown)') }}"
+
+- name: 幂等创建 srv_layout 目录并设置所有权与权限
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop: "{{ _srv_layout_managed_directories }}"
+  loop_control:
+    label: "{{ item.path }}"

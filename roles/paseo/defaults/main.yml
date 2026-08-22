@@ -1,0 +1,13 @@
+---
+# Paseo role 的公开默认值；运行时事实由本 role 或上游 role 产生。
+nuc_admin_user: CHANGE_ME
+nuc_tailscale_ipv4: "100.101.102.103"
+nuc_access_hostname: agent.example.com
+nuc_paseo_port: 6767
+
+nuc_architecture: amd64
+nuc_nodejs_major: 22
+nuc_nodejs_package_version: ""
+nuc_paseo_cli_version: latest
+nuc_paseo_npm_prefix_relative: .local/npm
+nuc_paseo_password_configured: false

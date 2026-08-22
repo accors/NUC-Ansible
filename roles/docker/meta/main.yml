@@ -1,0 +1,7 @@
+---
+galaxy_info:
+  author: agent-nuc
+  description: 配置 Docker 官方 Debian APT 仓库、Docker Engine 与日志轮转
+  license: MIT
+  min_ansible_version: "2.16"
+dependencies: []

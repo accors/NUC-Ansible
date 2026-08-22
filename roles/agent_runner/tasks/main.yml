@@ -1,0 +1,294 @@
+---
+# agent_runner —— PDF 11.1、11.3 与 13.4 验收。
+
+- name: 校验 agent-runner 的共享契约路径
+  ansible.builtin.assert:
+    that:
+      - nuc_agent_runner_home == '/var/lib/agent-runner'
+      - nuc_agent_runner_workdir == '/srv/automation'
+      - nuc_agent_runner_codex_home == '/var/lib/agent-runner/codex'
+      - >-
+        nuc_agent_runner_credential_path ==
+        '/etc/credstore.encrypted/agent-codex-api-key'
+    fail_msg: >-
+      agent_runner 必须使用契约规定的路径：home=/var/lib/agent-runner，
+      workdir=/srv/automation，CODEX_HOME=/var/lib/agent-runner/codex，
+      credential=/etc/credstore.encrypted/agent-codex-api-key。
+
+- name: 筛选唯一由 agent_runner 管理的 /srv 目录
+  ansible.builtin.set_fact:
+    _agent_runner_managed_directories: >-
+      {{ nuc_srv_directories
+         | selectattr('managed_by', 'equalto', 'agent_runner')
+         | list }}
+
+- name: 断言 automation 目录清单唯一且权限正确
+  ansible.builtin.assert:
+    that:
+      - _agent_runner_managed_directories | length == 1
+      - _agent_runner_managed_directories[0].path == '/srv/automation'
+      - _agent_runner_managed_directories[0].path == nuc_agent_runner_workdir
+      - _agent_runner_managed_directories[0].owner == nuc_agent_runner_user
+      - _agent_runner_managed_directories[0].group == nuc_agent_runner_user
+      - (_agent_runner_managed_directories[0].mode | string) == '0750'
+    fail_msg: >-
+      nuc_srv_directories 必须恰好包含一项 managed_by=agent_runner，且该项必须是
+      nuc_agent_runner_user 所有的 0750 /srv/automation。
+
+- name: 筛选 srv_layout 的 workspaces 目录
+  ansible.builtin.set_fact:
+    _agent_runner_workspace_directories: >-
+      {{ nuc_srv_directories
+         | selectattr('path', 'equalto', '/srv/workspaces')
+         | selectattr('managed_by', 'equalto', 'srv_layout')
+         | list }}
+
+- name: 断言 automation 与 workspaces 平级
+  ansible.builtin.assert:
+    that:
+      - _agent_runner_workspace_directories | length == 1
+      - _agent_runner_workspace_directories[0].path == '/srv/workspaces'
+      - nuc_agent_runner_workdir == '/srv/automation'
+    fail_msg: >-
+      /srv/automation 必须是由 agent_runner 独立管理、并与 /srv/workspaces 平级的目录；
+      不得放在 /srv/workspaces 下面（PDF 11.1）。
+
+- name: 创建受限无密码账号
+  ansible.builtin.user:
+    name: "{{ nuc_agent_runner_user }}"
+    home: "{{ nuc_agent_runner_home }}"
+    create_home: true
+    system: false
+    shell: /usr/sbin/nologin
+    password: "!"
+    password_lock: true
+    update_password: always
+    groups: []
+    append: false
+  no_log: true
+
+- name: 确认受限账号没有任何附加组
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/id
+      - -Gn
+      - "{{ nuc_agent_runner_user }}"
+  register: _agent_runner_groups
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode
+
+- name: 断言受限账号不在任何附加组
+  ansible.builtin.assert:
+    that:
+      - >-
+        _agent_runner_groups.skipped | default(false) or
+        _agent_runner_groups.rc == 0
+      - >-
+        _agent_runner_groups.skipped | default(false) or
+        (_agent_runner_groups.stdout | trim).split() | length == 1
+      - >-
+        _agent_runner_groups.skipped | default(false) or
+        'sudo' not in (_agent_runner_groups.stdout | trim).split()
+      - >-
+        _agent_runner_groups.skipped | default(false) or
+        'docker' not in (_agent_runner_groups.stdout | trim).split()
+    fail_msg: >-
+      {{ nuc_agent_runner_user }} 必须没有任何附加组（尤其不能属于 sudo 或 docker）；
+      该账号不得获得 Docker socket 或其他特权（PDF 11.1）。
+
+- name: 创建受限 automation 目录
+  ansible.builtin.file:
+    path: "{{ _agent_runner_directory.path }}"
+    state: directory
+    owner: "{{ _agent_runner_directory.owner }}"
+    group: "{{ _agent_runner_directory.group }}"
+    mode: "{{ _agent_runner_directory.mode }}"
+  loop: "{{ _agent_runner_managed_directories }}"
+  loop_control:
+    loop_var: _agent_runner_directory
+
+- name: 固定 agent-runner home 权限
+  ansible.builtin.file:
+    path: "{{ nuc_agent_runner_home }}"
+    state: directory
+    owner: "{{ nuc_agent_runner_user }}"
+    group: "{{ nuc_agent_runner_user }}"
+    mode: "0750"
+
+- name: 创建 agent-runner 的 Codex home
+  ansible.builtin.file:
+    path: "{{ nuc_agent_runner_codex_home }}"
+    state: directory
+    owner: "{{ nuc_agent_runner_user }}"
+    group: "{{ nuc_agent_runner_user }}"
+    mode: "0750"
+
+- name: 检查系统 npm 可执行文件
+  ansible.builtin.stat:
+    path: "{{ _agent_runner_npm_candidate }}"
+  loop:
+    - /usr/local/bin/npm
+    - /usr/bin/npm
+  loop_control:
+    loop_var: _agent_runner_npm_candidate
+  register: _agent_runner_npm_stats
+
+- name: 选择系统 npm 路径
+  ansible.builtin.set_fact:
+    _agent_runner_npm_bin: >-
+      {{ '/usr/local/bin/npm'
+         if (_agent_runner_npm_stats.results[0].stat.exists
+             | default(false)
+             and _agent_runner_npm_stats.results[0].stat.executable
+             | default(false))
+         else '/usr/bin/npm'
+         if (_agent_runner_npm_stats.results[1].stat.exists
+             | default(false)
+             and _agent_runner_npm_stats.results[1].stat.executable
+             | default(false))
+         else '' }}
+
+- name: 在正常执行模式检查 npm 前置条件
+  ansible.builtin.fail:
+    msg: >-
+      未找到 npm；请先运行 paseo role 安装 Node.js 22 LTS 与 npm，再重跑
+      agent_runner tag。check mode 不会调用尚未安装的 npm。
+  when:
+    - not ansible_check_mode
+    - (_agent_runner_npm_bin | length) == 0
+
+- name: 通过 npm 将 Codex 安装到 /usr/local
+  community.general.npm:
+    name: "@openai/codex"
+    version: "{{ nuc_codex_system_version }}"
+    global: true
+    path: /usr/local
+    state: present
+    executable: "{{ _agent_runner_npm_bin }}"
+  environment:
+    PATH: /usr/local/bin:/usr/bin:/bin
+    NPM_CONFIG_PREFIX: /usr/local
+  when:
+    - not ansible_check_mode
+    - (_agent_runner_npm_bin | length) > 0
+
+- name: 检查系统路径 Codex 可执行文件
+  ansible.builtin.stat:
+    path: /usr/local/bin/codex
+  register: _agent_runner_codex_stat
+
+- name: 在正常执行模式确认 Codex 已安装到契约路径
+  ansible.builtin.fail:
+    msg: >-
+      未找到可执行的 /usr/local/bin/codex；请确认 npm 在 /usr/local 完成
+      @openai/codex@{{ nuc_codex_system_version }} 安装后重跑 agent_runner tag。
+  when:
+    - not ansible_check_mode
+    - not _agent_runner_codex_stat.stat.exists
+      or not _agent_runner_codex_stat.stat.isreg
+      or not _agent_runner_codex_stat.stat.executable
+
+- name: 以 agent-runner 身份验证系统路径 Codex
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/codex
+      - --version
+  become: true
+  become_user: "{{ nuc_agent_runner_user }}"
+  environment:
+    HOME: "{{ nuc_agent_runner_home }}"
+    CODEX_HOME: "{{ nuc_agent_runner_codex_home }}"
+    PATH: /usr/local/bin:/usr/bin:/bin
+  register: _agent_runner_codex_version
+  changed_when: false
+  when:
+    - not ansible_check_mode
+    - _agent_runner_codex_stat.stat.exists
+      and _agent_runner_codex_stat.stat.isreg
+      and _agent_runner_codex_stat.stat.executable
+
+- name: 创建 systemd 加密凭据目录但不创建凭据
+  ansible.builtin.file:
+    path: /etc/credstore.encrypted
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: 安装 daily Codex automation service
+  ansible.builtin.template:
+    src: agent-codex-daily.service.j2
+    dest: /etc/systemd/system/agent-codex-daily.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: "agent_runner | daemon-reload system units"
+
+- name: 安装 daily Codex automation timer
+  ansible.builtin.template:
+    src: agent-codex-daily.timer.j2
+    dest: /etc/systemd/system/agent-codex-daily.timer
+    owner: root
+    group: root
+    mode: "0644"
+  notify: "agent_runner | daemon-reload system units"
+
+# 先使 unit 文件与 systemd 一致，再检查人工写入的加密凭据。
+- name: 刷新 systemd system units
+  ansible.builtin.meta: flush_handlers
+
+- name: 只读检查加密凭据文件
+  ansible.builtin.stat:
+    path: "{{ nuc_agent_runner_credential_path }}"
+  register: _agent_runner_credential_stat
+
+- name: 凭据缺失时给出 PDF 11.3 的精确人工命令
+  ansible.builtin.fail:
+    msg: >-
+      缺少 {{ nuc_agent_runner_credential_path }}。请在 unit 文件落地后手工执行
+      （PDF 11.3）：
+      sudo systemd-creds encrypt - /etc/credstore.encrypted/agent-codex-api-key
+      ，在提示符中粘贴专用 OPENAI_API_KEY，按 Ctrl-D 结束，然后重跑 agent_runner tag。
+      Ansible 不会执行 systemd-creds、expect 或写入 API key。
+  when:
+    - not ansible_check_mode
+    - not _agent_runner_credential_stat.stat.exists
+      or not _agent_runner_credential_stat.stat.isreg
+
+- name: 检查 daily timer unit 是否已落地
+  ansible.builtin.stat:
+    path: /etc/systemd/system/agent-codex-daily.timer
+  register: _agent_runner_timer_stat
+
+- name: 在首次人工验收前保持 timer 停止且禁用
+  ansible.builtin.systemd_service:
+    name: agent-codex-daily.timer
+    enabled: false
+    state: stopped
+  when:
+    - not ansible_check_mode
+    - not (nuc_agent_runner_timer_enabled | bool)
+    - _agent_runner_timer_stat.stat.exists
+
+- name: 首次人工 service 验收前明确停止流程
+  ansible.builtin.fail:
+    msg: >-
+      agent-codex-daily.timer 当前不会启用。请先手工验收 service：
+      sudo systemctl start agent-codex-daily.service；
+      sudo journalctl -u agent-codex-daily.service --no-pager。
+      确认成功且无 status=200/CHDIR 或 ProtectHome 错误后，将
+      nuc_agent_runner_timer_enabled 改为 true，再重跑 agent_runner tag
+      （PDF 11.3、13.4）。
+  when:
+    - not ansible_check_mode
+    - not (nuc_agent_runner_timer_enabled | bool)
+
+- name: 幂等启用并启动 daily timer
+  ansible.builtin.systemd_service:
+    name: agent-codex-daily.timer
+    enabled: true
+    state: started
+  when:
+    - not ansible_check_mode
+    - nuc_agent_runner_timer_enabled | bool

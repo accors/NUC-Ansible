@@ -1,0 +1,8 @@
+---
+galaxy_info:
+  role_name: cloudflared
+  author: agent-nuc
+  description: 配置 Cloudflare 官方 APT 源并按人工 Dashboard 门禁安装 cloudflared service
+  license: MIT
+  min_ansible_version: "2.16"
+dependencies: []

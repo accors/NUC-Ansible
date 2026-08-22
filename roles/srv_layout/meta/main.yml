@@ -1,0 +1,8 @@
+---
+galaxy_info:
+  role_name: srv_layout
+  author: agent-nuc
+  description: 创建管理员拥有的 /srv 工作目录布局
+  license: MIT
+  min_ansible_version: "2.16"
+dependencies: []

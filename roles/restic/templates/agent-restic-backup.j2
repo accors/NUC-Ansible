@@ -1,0 +1,23 @@
+#!/bin/sh
+set -eu
+
+# EnvironmentFile 负责注入凭据；未提供时立即失败，不把秘密写入命令行。
+: "${RESTIC_REPOSITORY:?RESTIC_REPOSITORY 未设置}"
+: "${RESTIC_PASSWORD:?RESTIC_PASSWORD 未设置}"
+export RESTIC_REPOSITORY RESTIC_PASSWORD
+
+# 备份完成后才执行 forget；set -e 保证任一步失败都会使 service 失败。
+/usr/bin/restic backup \
+{% for path in nuc_restic_backup_paths %}
+  {{ path | quote }}{% if not loop.last or (nuc_restic_excludes | length > 0) %} \{% endif %}{{ '\n' -}}
+{% endfor %}
+{% for exclude in nuc_restic_excludes %}
+  --exclude={{ exclude | quote }}{% if not loop.last %} \{% endif %}{{ '\n' -}}
+{% endfor %}
+
+/usr/bin/restic forget \
+  --keep-daily {{ nuc_restic_keep.daily | int }} \
+  --keep-weekly {{ nuc_restic_keep.weekly | int }} \
+  --keep-monthly {{ nuc_restic_keep.monthly | int }} \
+  --keep-yearly {{ nuc_restic_keep.yearly | int }} \
+  --prune

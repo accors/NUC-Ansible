@@ -1,0 +1,7 @@
+---
+# Tailscale 官方 Debian 仓库与运行时地址校验的契约默认值。
+nuc_debian_codename: trixie
+nuc_architecture: amd64
+nuc_tailscale_channel: stable
+nuc_tailscale_package_version: ""
+nuc_tailscale_ipv4: "100.101.102.103"

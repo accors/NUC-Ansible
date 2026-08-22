@@ -1,0 +1,5 @@
+---
+# Codex role 的公开默认值；管理员 home 与 Codex 路径在运行时探测。
+nuc_admin_user: CHANGE_ME
+nuc_codex_installer_url: https://chatgpt.com/codex/install.sh
+nuc_codex_admin_version: latest

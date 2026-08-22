@@ -1,0 +1,30 @@
+---
+# Paseo user unit 的操作必须使用探测到的 UID 与运行时目录。
+- name: paseo | daemon-reload user units
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+    scope: user
+  become: true
+  become_user: "{{ nuc_admin_user }}"
+  environment:
+    HOME: "{{ nuc_admin_home }}"
+    XDG_RUNTIME_DIR: "/run/user/{{ nuc_admin_uid }}"
+    PATH: "{{ nuc_paseo_unit_path }}"
+  when: >-
+    not ansible_check_mode or
+    ((_paseo_unit_file_stat | default({})).get('stat', {}).get('exists', false))
+
+- name: paseo | restart paseo
+  ansible.builtin.systemd_service:
+    name: paseo.service
+    state: restarted
+    scope: user
+  become: true
+  become_user: "{{ nuc_admin_user }}"
+  environment:
+    HOME: "{{ nuc_admin_home }}"
+    XDG_RUNTIME_DIR: "/run/user/{{ nuc_admin_uid }}"
+    PATH: "{{ nuc_paseo_unit_path }}"
+  when: >-
+    not ansible_check_mode or
+    ((_paseo_unit_file_stat | default({})).get('stat', {}).get('exists', false))

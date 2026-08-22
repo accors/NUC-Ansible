@@ -1,0 +1,14 @@
+---
+# Docker 官方 APT 仓库与日志轮转的契约默认值。
+nuc_debian_codename: "trixie"
+nuc_architecture: "amd64"
+
+nuc_docker_package_versions:
+  docker-ce: ""
+  docker-ce-cli: ""
+  containerd.io: ""
+  docker-buildx-plugin: ""
+  docker-compose-plugin: ""
+
+nuc_docker_log_max_size: "10m"
+nuc_docker_log_max_file: "3"

@@ -1,0 +1,8 @@
+---
+galaxy_info:
+  role_name: tailscale
+  author: agent-nuc
+  description: 安装 Tailscale 官方 Debian 软件包并校验人工授权后的 IPv4
+  license: MIT
+  min_ansible_version: "2.16"
+dependencies: []

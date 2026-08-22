@@ -1,0 +1,8 @@
+---
+galaxy_info:
+  role_name: base
+  author: agent-nuc
+  description: Debian 基础软件、主机防护与监控基线
+  license: MIT
+  min_ansible_version: "2.16"
+dependencies: []

@@ -1,0 +1,116 @@
+---
+# cloudflared —— PDF 10.3-10.5：只配置本机软件，Dashboard 侧全部人工完成。
+
+- name: 安装 Cloudflare APT 源所需的 CA 与签名工具
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - gnupg
+    state: present
+
+- name: 确保 Cloudflare 官方 keyring 目录存在
+  ansible.builtin.file:
+    path: /usr/share/keyrings
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: 下载 Cloudflare 官方 APT 签名 keyring
+  ansible.builtin.get_url:
+    url: https://pkg.cloudflare.com/cloudflare-main.gpg
+    dest: /usr/share/keyrings/cloudflare-main.gpg
+    owner: root
+    group: root
+    mode: "0644"
+    validate_certs: true
+
+- name: 配置 Cloudflare 官方 cloudflared APT repository
+  ansible.builtin.apt_repository:
+    repo: >-
+      deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg]
+      https://pkg.cloudflare.com/cloudflared any main
+    filename: cloudflared
+    state: present
+    update_cache: true
+
+- name: 按契约版本安装 cloudflared 软件包
+  ansible.builtin.apt:
+    name: >-
+      {{
+        'cloudflared=' ~ (nuc_cloudflared_package_version | string | trim)
+        if (nuc_cloudflared_package_version | string | trim | length) > 0
+        else 'cloudflared'
+      }}
+    state: present
+
+# 先完成软件安装，再检查人工 Dashboard 门禁提供的加密 vault 值。
+- name: 校验 cloudflared service 的 vault 配置门禁
+  ansible.builtin.set_fact:
+    _cloudflared_token_configured: >-
+      {{
+        (vault_nuc_cloudflared_tunnel_token | default('', true) | string | trim | length > 0)
+        and
+        ((vault_nuc_cloudflared_tunnel_token | default('', true) | string | trim | upper) != 'CHANGE_ME')
+      }}
+  when: nuc_cloudflared_enable_service | bool
+  no_log: true
+
+- name: vault 配置缺失时停止 cloudflared service 配置
+  ansible.builtin.fail:
+    msg: >-
+      nuc_cloudflared_enable_service=true 但加密 vault 中没有可用的
+      vault_nuc_cloudflared_tunnel_token。请按 PDF 10.4 由人工完成 Cloudflare
+      Dashboard 的域名接入、Create tunnel、Published application、Access
+      application/Allow policy 与 MFA 配置（不创建 Bypass），再把 service token
+      写入加密 Ansible Vault 后重跑 cloudflared tag。
+  when:
+    - nuc_cloudflared_enable_service | bool
+    - not (_cloudflared_token_configured | default(false) | bool)
+
+- name: 检查现有 cloudflared systemd unit
+  ansible.builtin.stat:
+    path: /etc/systemd/system/cloudflared.service
+  register: _cloudflared_service_unit
+  when:
+    - nuc_cloudflared_enable_service | bool
+    - _cloudflared_token_configured | default(false) | bool
+
+- name: 检查已安装的 cloudflared 可执行文件
+  ansible.builtin.stat:
+    path: /usr/bin/cloudflared
+  register: _cloudflared_binary
+  when:
+    - nuc_cloudflared_enable_service | bool
+    - _cloudflared_token_configured | default(false) | bool
+
+- name: 在本机幂等安装 cloudflared systemd service
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/cloudflared
+      - service
+      - install
+      - "{{ vault_nuc_cloudflared_tunnel_token }}"
+    creates: /etc/systemd/system/cloudflared.service
+  register: _cloudflared_service_install
+  when:
+    - nuc_cloudflared_enable_service | bool
+    - _cloudflared_token_configured | default(false) | bool
+    # fresh-host check mode 不得调用本轮尚未安装的 cloudflared。
+    - not ansible_check_mode or _cloudflared_service_unit.stat.exists
+  notify: "cloudflared | restart cloudflared"
+  no_log: true
+
+- name: 启用并启动 cloudflared service
+  ansible.builtin.systemd_service:
+    name: cloudflared
+    enabled: true
+    state: started
+    daemon_reload: true
+  when:
+    - nuc_cloudflared_enable_service | bool
+    - _cloudflared_token_configured | default(false) | bool
+    # check mode 下仅探测已经存在且可执行的本机 service。
+    - >-
+      not ansible_check_mode or
+      (_cloudflared_service_unit.stat.exists and _cloudflared_binary.stat.exists)

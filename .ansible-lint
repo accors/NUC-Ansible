@@ -1,0 +1,6 @@
+---
+# 共享变量由 CONVENTIONS.md 统一规定为 nuc_ 前缀，而非 role 前缀。
+# handler 名也是已提交的跨 role 公共接口，必须保留契约中的精确大小写。
+skip_list:
+  - var-naming[no-role-prefix]
+  - name[casing]

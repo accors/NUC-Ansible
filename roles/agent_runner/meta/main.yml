@@ -1,0 +1,8 @@
+---
+galaxy_info:
+  role_name: agent_runner
+  author: agent-nuc
+  description: 受限 agent-runner 账号与 systemd Codex 自动化
+  license: MIT
+  min_ansible_version: "2.16"
+dependencies: []

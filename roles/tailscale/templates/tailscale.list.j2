@@ -1,0 +1,2 @@
+# Tailscale 官方 Debian 仓库；签名必须由专用 keyring 校验。
+deb [arch={{ nuc_architecture }} signed-by=/etc/apt/keyrings/tailscale-archive-keyring.gpg] https://pkgs.tailscale.com/{{ nuc_tailscale_channel }}/debian {{ nuc_debian_codename }} main

@@ -1,0 +1,11 @@
+{# 每日 Codex automation 的 system-level timer。 #}
+[Unit]
+Description=Run daily Codex automation
+
+[Timer]
+OnCalendar={{ nuc_agent_runner_schedule }}
+Persistent=true
+RandomizedDelaySec={{ nuc_agent_runner_randomized_delay }}
+
+[Install]
+WantedBy=timers.target

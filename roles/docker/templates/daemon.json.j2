@@ -1,0 +1,2 @@
+{# 该对象由 tasks/main.yml 递归合并，保留已有的 Docker daemon 配置键。 #}
+{{ _docker_merged_daemon | to_nice_json(indent=2) }}

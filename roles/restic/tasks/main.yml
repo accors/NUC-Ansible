@@ -1,0 +1,164 @@
+---
+# restic —— PDF 12.1–12.4：加密备份、保留策略与 nightly systemd timer。
+
+- name: 校验 Restic 仓库和密码已填写
+  ansible.builtin.assert:
+    that:
+      - >-
+        nuc_restic_repository is defined and nuc_restic_repository is string and
+        (nuc_restic_repository | trim) not in ['', 'CHANGE_ME'] and
+        nuc_restic_repository is not search('[\r\n\x00]')
+      - >-
+        vault_nuc_restic_password is defined and vault_nuc_restic_password is string and
+        (vault_nuc_restic_password | trim) not in ['', 'CHANGE_ME'] and
+        vault_nuc_restic_password is not search('[\r\n\x00]')
+      - nuc_restic_backup_paths is sequence
+      - nuc_restic_backup_paths | length > 0
+      - nuc_restic_excludes is sequence
+      - nuc_restic_keep is mapping
+      - nuc_restic_keep.daily is defined
+      - nuc_restic_keep.weekly is defined
+      - nuc_restic_keep.monthly is defined
+      - nuc_restic_keep.yearly is defined
+    fail_msg: >-
+      Restic 配置不完整：必须填写不含凭据的 nuc_restic_repository、Vault 中的
+      vault_nuc_restic_password，并提供至少一个备份路径和完整保留策略。
+  no_log: true
+
+- name: 解析 Restic 软件包安装规格
+  ansible.builtin.set_fact:
+    _restic_package_spec: >-
+      {{
+        'restic'
+        if (nuc_restic_package_version | string | trim) == ''
+        else 'restic=' ~ (nuc_restic_package_version | string)
+      }}
+
+- name: 安装契约指定版本的 Restic
+  ansible.builtin.apt:
+    name: "{{ _restic_package_spec }}"
+    state: present
+    update_cache: true
+
+- name: 创建 Restic 配置目录
+  ansible.builtin.file:
+    path: /etc/restic
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: 写入 root-only Restic 环境文件
+  ansible.builtin.template:
+    src: agent-nuc.env.j2
+    dest: "{{ nuc_restic_env_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: 只读探测 Restic 仓库快照
+  ansible.builtin.command:
+    cmd: /usr/bin/restic snapshots --no-lock
+  environment:
+    RESTIC_REPOSITORY: "{{ nuc_restic_repository }}"
+    RESTIC_PASSWORD: "{{ vault_nuc_restic_password }}"
+  register: _restic_snapshots
+  changed_when: false
+  failed_when: >-
+    _restic_snapshots.rc != 0 and not (
+      (_restic_snapshots.stderr is search('(?i)unable to open config file:.*no such file or directory'))
+      or (_restic_snapshots.stderr is search('(?i)repository (?:is )?not initialized'))
+    )
+  no_log: true
+  when: not (ansible_check_mode | bool)
+
+- name: 记录 Restic 仓库已初始化状态
+  ansible.builtin.set_fact:
+    _restic_repository_initialized: "{{ _restic_snapshots.rc == 0 }}"
+    _restic_repository_uninitialized: >-
+      {{
+        (_restic_snapshots.rc != 0)
+        and (
+          (_restic_snapshots.stderr is search('(?i)unable to open config file:.*no such file or directory'))
+          or (_restic_snapshots.stderr is search('(?i)repository (?:is )?not initialized'))
+        )
+      }}
+  when: not (ansible_check_mode | bool)
+
+- name: 未初始化仓库且门禁关闭时停止
+  ansible.builtin.fail:
+    msg: >-
+      Restic 仓库尚未初始化；请确认 nuc_restic_repository 后手工执行首次验收，
+      或将 nuc_restic_initialize_repository 设为 true 允许本 role 执行 restic init。
+  when:
+    - not (ansible_check_mode | bool)
+    - _restic_repository_uninitialized | default(false) | bool
+    - not (nuc_restic_initialize_repository | bool)
+
+- name: 初始化已确认未初始化的 Restic 仓库
+  ansible.builtin.command:
+    cmd: /usr/bin/restic init
+  environment:
+    RESTIC_REPOSITORY: "{{ nuc_restic_repository }}"
+    RESTIC_PASSWORD: "{{ vault_nuc_restic_password }}"
+  register: _restic_init
+  changed_when: _restic_init.rc == 0
+  failed_when: _restic_init.rc != 0
+  no_log: true
+  when:
+    - not (ansible_check_mode | bool)
+    - _restic_repository_uninitialized | default(false) | bool
+    - nuc_restic_initialize_repository | bool
+
+- name: 记录 Restic 初始化已完成
+  ansible.builtin.set_fact:
+    _restic_repository_initialized: true
+    _restic_repository_uninitialized: false
+  when:
+    - not (ansible_check_mode | bool)
+    - _restic_init is defined
+    - not (_restic_init.skipped | default(false))
+    - _restic_init.rc == 0
+
+- name: 检查现有 Restic nightly timer unit
+  ansible.builtin.stat:
+    path: /etc/systemd/system/agent-restic-backup.timer
+  register: _restic_timer_unit
+
+- name: 安装 Restic 备份包装脚本
+  ansible.builtin.template:
+    src: agent-restic-backup.j2
+    dest: "{{ nuc_restic_wrapper_path }}"
+    owner: root
+    group: root
+    mode: "0750"
+  notify: "restic | daemon-reload system units"
+
+- name: 安装 Restic nightly service
+  ansible.builtin.template:
+    src: agent-restic-backup.service.j2
+    dest: /etc/systemd/system/agent-restic-backup.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: "restic | daemon-reload system units"
+
+- name: 安装 Restic nightly timer
+  ansible.builtin.template:
+    src: agent-restic-backup.timer.j2
+    dest: /etc/systemd/system/agent-restic-backup.timer
+    owner: root
+    group: root
+    mode: "0644"
+  notify: "restic | daemon-reload system units"
+
+- name: 按契约控制 Restic nightly timer
+  ansible.builtin.systemd_service:
+    name: agent-restic-backup.timer
+    enabled: "{{ nuc_restic_enable_timer | bool }}"
+    state: "{{ 'started' if (nuc_restic_enable_timer | bool) else 'stopped' }}"
+    daemon_reload: true
+  when: >-
+    not (ansible_check_mode | bool) or
+    (_restic_timer_unit.stat.exists | default(false))

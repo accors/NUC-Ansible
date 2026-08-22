@@ -1,0 +1,8 @@
+---
+galaxy_info:
+  role_name: codex
+  author: agent-nuc
+  description: 为个人管理员安装官方 Codex CLI 并检查登录状态
+  license: MIT
+  min_ansible_version: "2.16"
+dependencies: []

@@ -1,0 +1,11 @@
+---
+galaxy_info:
+  author: agent-nuc
+  description: 安装并配置管理员账户的 Paseo daemon
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Debian
+      versions:
+        - all
+dependencies: []

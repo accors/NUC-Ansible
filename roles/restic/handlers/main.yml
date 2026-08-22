@@ -1,0 +1,6 @@
+---
+# Restic 单元文件变化后只重新加载 systemd 管理器。
+- name: "restic | daemon-reload system units"
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: not ansible_check_mode

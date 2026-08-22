@@ -1,0 +1,11 @@
+[Unit]
+Description=Run nightly Restic backup
+
+[Timer]
+OnCalendar={{ nuc_restic_schedule }}
+Persistent=true
+RandomizedDelaySec={{ nuc_restic_randomized_delay }}
+Unit=agent-restic-backup.service
+
+[Install]
+WantedBy=timers.target

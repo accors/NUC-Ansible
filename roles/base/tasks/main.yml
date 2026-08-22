@@ -1,0 +1,168 @@
+---
+# base —— PDF 6.1、6.3、6.4、7.2、7.3、12.4、13.2
+
+- name: 校验基础防护的固定边界
+  ansible.builtin.assert:
+    that:
+      - not (nuc_unattended_upgrades_auto_reboot | bool)
+      - nuc_ufw_tailscale_ports | length == 2
+      - nuc_ufw_tailscale_ports[0] | int == 22
+      - nuc_ufw_tailscale_ports[1] | int == nuc_paseo_port | int
+    fail_msg: >-
+      base 的第一阶段边界无效：自动重启必须为 false，且
+      nuc_ufw_tailscale_ports 必须严格为 [22, nuc_paseo_port]。
+
+- name: 更新 APT 缓存（PDF 6.1）
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: 执行 APT full-upgrade（PDF 6.1）
+  ansible.builtin.apt:
+    upgrade: full
+
+- name: 安装契约规定的基础软件包（PDF 6.1）
+  ansible.builtin.apt:
+    name: "{{ nuc_base_packages }}"
+    state: present
+
+# --- 无头运行：禁止一切自动睡眠（PDF 6.3） ---
+- name: 屏蔽四个自动睡眠 target（PDF 6.3）
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    masked: true
+  loop: "{{ nuc_sleep_targets }}"
+
+# --- 自动安全更新（PDF 6.4） ---
+- name: 写入 unattended-upgrades 周期配置
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+  notify: "base | restart unattended-upgrades"
+
+- name: 写入 unattended-upgrades 自动重启关闭配置
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/51-agent-nuc-no-auto-reboot
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      // 第一阶段禁止自动重启，避免打断正在写文件的 Agent。
+      Unattended-Upgrade::Automatic-Reboot "false";
+  notify: "base | restart unattended-upgrades"
+
+- name: 启用并启动 unattended-upgrades
+  ansible.builtin.systemd_service:
+    name: unattended-upgrades
+    enabled: true
+    state: started
+
+# --- journald 磁盘上限（任务补充、PDF 12.4） ---
+- name: 确保 journald drop-in 目录存在
+  ansible.builtin.file:
+    path: /etc/systemd/journald.conf.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: 限制 journald 磁盘占用
+  ansible.builtin.copy:
+    dest: /etc/systemd/journald.conf.d/10-agent-nuc-size.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Journal]
+      SystemMaxUse={{ nuc_journald_system_max_use }}
+  notify: "base | restart systemd-journald"
+
+# --- UFW 最小开放（PDF 7.2、7.3） ---
+- name: 设置 UFW 默认拒绝入站
+  community.general.ufw:
+    direction: incoming
+    policy: deny
+
+- name: 设置 UFW 默认允许出站
+  community.general.ufw:
+    direction: outgoing
+    policy: allow
+
+- name: 允许 LAN 网段访问 SSH
+  community.general.ufw:
+    rule: allow
+    direction: in
+    src: "{{ nuc_lan_cidr }}"
+    port: "{{ nuc_ufw_lan_ssh_port }}"
+    proto: tcp
+
+# tailscale0 尚未出现时也先写入规则，不依赖接口已创建。
+- name: 允许 tailscale0 访问 SSH 与 Paseo
+  community.general.ufw:
+    rule: allow
+    direction: in
+    interface: tailscale0
+    port: "{{ item }}"
+    proto: tcp
+  loop: "{{ nuc_ufw_tailscale_ports }}"
+
+- name: 启用 UFW
+  community.general.ufw:
+    state: enabled
+
+# --- 传感器与磁盘监控（PDF 12.4、13.2） ---
+- name: 确保模块加载配置目录存在
+  ansible.builtin.file:
+    path: /etc/modules-load.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: 检查 sensors-detect 幂等状态标记
+  ansible.builtin.stat:
+    path: /etc/modules-load.d/agent-nuc-sensors-detect.state
+  register: _base_sensors_detect_state
+
+- name: 自动探测传感器模块（仅首次执行）
+  ansible.builtin.command:
+    cmd: sensors-detect --auto
+    creates: /etc/modules-load.d/agent-nuc-sensors-detect.state
+  register: _base_sensors_detect
+  when: not _base_sensors_detect_state.stat.exists
+  changed_when:
+    - not (_base_sensors_detect.skipped | default(false))
+    - (_base_sensors_detect.rc | default(1)) == 0
+
+- name: 记录 sensors-detect 已成功执行
+  ansible.builtin.copy:
+    dest: /etc/modules-load.d/agent-nuc-sensors-detect.state
+    owner: root
+    group: root
+    mode: "0644"
+    content: "sensors-detect --auto 已由 Ansible 执行。\n"
+  when:
+    - not _base_sensors_detect_state.stat.exists
+    - not (_base_sensors_detect.skipped | default(false))
+    - (_base_sensors_detect.rc | default(1)) == 0
+
+- name: 为 NVMe 配置 smartd 监控
+  ansible.builtin.copy:
+    dest: /etc/smartd.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      {{ nuc_nvme_device }} -d nvme -a
+  notify: "base | restart smartd"
+
+- name: 启用并启动 smartd（PDF 12.4）
+  ansible.builtin.systemd_service:
+    name: smartd
+    enabled: true
+    state: started

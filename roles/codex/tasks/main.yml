@@ -1,0 +1,202 @@
+---
+# codex —— PDF 8.1、8.2 与 11.3 前半的管理员 CLI 边界。
+
+- name: 校验管理员 Codex 版本通道
+  ansible.builtin.fail:
+    msg: >-
+      nuc_codex_admin_version={{ nuc_codex_admin_version }} 不受管理员 Codex 安装脚本支持；
+      官方安装脚本只提供 latest 通道，不能用它实现精确版本 pin。
+      请将该变量设为 latest，或改用经审计的其他安装方案。
+  when: nuc_codex_admin_version != 'latest'
+
+- name: 校验 Codex 安装器使用 HTTPS
+  ansible.builtin.assert:
+    that:
+      - (nuc_codex_installer_url | trim) is match('^https://')
+    fail_msg: >-
+      nuc_codex_installer_url 必须是 HTTPS 地址；当前值不会被用于下载。
+
+- name: 探测管理员的 passwd 条目
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ nuc_admin_user }}"
+    fail_key: false
+  register: _codex_admin_passwd
+  failed_when: false
+  changed_when: false
+
+- name: 在管理员不存在时明确失败
+  ansible.builtin.fail:
+    msg: >-
+      未能从 getent passwd 探测管理员 {{ nuc_admin_user }}；请确认 nuc_admin_user
+      指向已由 Debian 安装器创建的个人管理员账户。
+  when: >-
+    _codex_admin_passwd is failed or
+    nuc_admin_user not in (ansible_facts.getent_passwd | default({}))
+
+- name: 导出管理员 home 运行时事实
+  ansible.builtin.set_fact:
+    nuc_admin_home: "{{ ansible_facts.getent_passwd[nuc_admin_user][4] }}"
+
+- name: 校验管理员 home 运行时事实
+  ansible.builtin.fail:
+    msg: >-
+      getent passwd 对 {{ nuc_admin_user }} 返回了无效的 home；Codex 不能在未探测
+      真实管理员 home 的情况下继续。
+  when: >-
+    (nuc_admin_home | trim | length) == 0 or
+    (nuc_admin_home | trim) is not match('^/')
+
+- name: 在管理员登录环境中探测现有 Codex 命令
+  ansible.builtin.shell:
+    cmd: command -v codex
+    executable: /bin/sh
+  become: true
+  become_user: "{{ nuc_admin_user }}"
+  environment:
+    HOME: "{{ nuc_admin_home }}"
+    PATH: "{{ nuc_admin_home }}/.local/bin:{{ nuc_admin_home }}/bin:/usr/local/bin:/usr/bin:/bin"
+  register: _codex_admin_command
+  changed_when: false
+  failed_when: false
+
+- name: 创建 Codex 官方安装器的安全临时目录
+  ansible.builtin.file:
+    path: /tmp/agent-nuc-codex-installer
+    state: directory
+    owner: "{{ nuc_admin_user }}"
+    group: "{{ nuc_admin_user }}"
+    mode: '0700'
+  when: _codex_admin_command.rc != 0
+
+- name: 下载官方 Codex 安装脚本
+  ansible.builtin.get_url:
+    url: "{{ nuc_codex_installer_url }}"
+    dest: /tmp/agent-nuc-codex-installer/install.sh
+    owner: "{{ nuc_admin_user }}"
+    group: "{{ nuc_admin_user }}"
+    mode: '0700'
+    force: true
+    validate_certs: true
+  register: _codex_installer_download
+  when: _codex_admin_command.rc != 0
+
+- name: 以管理员执行官方 Codex 安装脚本
+  ansible.builtin.command:
+    argv:
+      - /bin/sh
+      - /tmp/agent-nuc-codex-installer/install.sh
+  become: true
+  become_user: "{{ nuc_admin_user }}"
+  environment:
+    HOME: "{{ nuc_admin_home }}"
+    PATH: "{{ nuc_admin_home }}/.local/bin:{{ nuc_admin_home }}/bin:/usr/local/bin:/usr/bin:/bin"
+  register: _codex_install
+  when:
+    - not ansible_check_mode
+    - _codex_admin_command.rc != 0
+  changed_when: _codex_install.rc == 0
+  failed_when: _codex_install.rc != 0
+
+- name: 清理 Codex 安装器的安全临时目录
+  ansible.builtin.file:
+    path: /tmp/agent-nuc-codex-installer
+    state: absent
+  when:
+    - not ansible_check_mode
+    - _codex_admin_command.rc != 0
+    - _codex_install is defined
+    - not (_codex_install.skipped | default(false))
+
+- name: 安装后在管理员登录环境中探测 Codex 路径
+  ansible.builtin.shell:
+    cmd: command -v codex
+    executable: /bin/sh
+  become: true
+  become_user: "{{ nuc_admin_user }}"
+  environment:
+    HOME: "{{ nuc_admin_home }}"
+    PATH: "{{ nuc_admin_home }}/.local/bin:{{ nuc_admin_home }}/bin:/usr/local/bin:/usr/bin:/bin"
+  register: _codex_admin_bin_probe
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode or _codex_admin_command.rc == 0
+
+- name: 在 Codex 安装后找不到命令时明确失败
+  ansible.builtin.fail:
+    msg: >-
+      官方 Codex 安装脚本执行后仍未能在 {{ nuc_admin_user }} 的登录环境中找到 codex；
+      请检查安装器输出与管理员 PATH。
+  when: >-
+    (not ansible_check_mode or _codex_admin_command.rc == 0) and
+    (_codex_admin_bin_probe.rc | default(1) | int) != 0
+
+- name: 导出管理员 Codex 路径运行时事实
+  ansible.builtin.set_fact:
+    nuc_codex_admin_bin: "{{ _codex_admin_bin_probe.stdout | trim }}"
+    nuc_codex_admin_bin_dir: >-
+      {{ (_codex_admin_bin_probe.stdout | trim) | regex_replace('/[^/]+$', '') }}
+  when:
+    - not (_codex_admin_bin_probe.skipped | default(false))
+    - _codex_admin_bin_probe.rc == 0
+    - (_codex_admin_bin_probe.stdout | trim) is match('^/')
+
+- name: 校验管理员 Codex 路径运行时事实
+  ansible.builtin.fail:
+    msg: >-
+      command -v codex 没有返回绝对路径；无法为 Paseo 组装可信的 Codex PATH。
+  when: >-
+    (not ansible_check_mode or _codex_admin_command.rc == 0) and
+    (
+      (_codex_admin_bin_probe.rc | default(1) | int) != 0 or
+      not ((_codex_admin_bin_probe.stdout | default('') | trim) is match('^/'))
+    )
+
+- name: 以管理员运行 codex --version
+  ansible.builtin.command:
+    argv:
+      - "{{ nuc_codex_admin_bin }}"
+      - --version
+  become: true
+  become_user: "{{ nuc_admin_user }}"
+  environment:
+    HOME: "{{ nuc_admin_home }}"
+    PATH: "{{ nuc_codex_admin_bin_dir }}:{{ nuc_admin_home }}/.local/bin:{{ nuc_admin_home }}/bin:/usr/local/bin:/usr/bin:/bin"
+  register: _codex_admin_version_probe
+  changed_when: false
+  failed_when: >-
+    _codex_admin_version_probe.rc != 0 or
+    (_codex_admin_version_probe.stdout | trim | length) == 0
+  when:
+    - nuc_codex_admin_bin is defined
+    - (nuc_codex_admin_bin | trim | length) > 0
+
+- name: 只读检查管理员 Codex 登录状态
+  ansible.builtin.command:
+    argv:
+      - "{{ nuc_codex_admin_bin }}"
+      - login
+      - status
+  become: true
+  become_user: "{{ nuc_admin_user }}"
+  environment:
+    HOME: "{{ nuc_admin_home }}"
+    PATH: "{{ nuc_codex_admin_bin_dir }}:{{ nuc_admin_home }}/.local/bin:{{ nuc_admin_home }}/bin:/usr/local/bin:/usr/bin:/bin"
+  register: _codex_login_status
+  changed_when: false
+  failed_when: false
+  when:
+    - nuc_codex_admin_bin is defined
+    - (nuc_codex_admin_bin | trim | length) > 0
+
+- name: 在管理员未登录 Codex 时明确失败
+  ansible.builtin.fail:
+    msg: >-
+      管理员 Codex 尚未登录或 codex login status 失败；请以 {{ nuc_admin_user }} 运行
+      codex login，然后重跑 codex tag。终端环境下可先运行 codex login --help，若当前版本
+      支持 --device-auth 再采用该方式。此步骤禁止自动化，详见 PDF 8.1、8.5 与
+      docs/INTERACTIVE-CHECKLIST.md 中 codex login 的人工清单。
+  when: >-
+    nuc_codex_admin_bin is defined and
+    (nuc_codex_admin_bin | trim | length) > 0 and
+    _codex_login_status.rc != 0

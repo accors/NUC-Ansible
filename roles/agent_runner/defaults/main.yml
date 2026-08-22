@@ -1,0 +1,46 @@
+---
+# agent_runner 只重述共享契约中本 role 使用的变量。
+nuc_admin_user: CHANGE_ME
+nuc_agent_runner_user: agent-runner
+nuc_agent_runner_home: /var/lib/agent-runner
+nuc_agent_runner_workdir: /srv/automation
+nuc_agent_runner_codex_home: /var/lib/agent-runner/codex
+nuc_codex_system_version: latest
+nuc_agent_runner_credential_path: /etc/credstore.encrypted/agent-codex-api-key
+nuc_agent_runner_task_prompt: 执行每日自动化任务，并把结果写入 reports/
+nuc_agent_runner_schedule: "*-*-* 07:30:00 Australia/Melbourne"
+nuc_agent_runner_randomized_delay: 10m
+nuc_agent_runner_timer_enabled: false
+
+# 只筛选 managed_by=agent_runner 的条目；其余 /srv 路径由各自 owner role 管理。
+nuc_srv_directories:
+  - path: /srv/workspaces
+    owner: "{{ nuc_admin_user }}"
+    group: "{{ nuc_admin_user }}"
+    mode: "0750"
+    purpose: 长期项目与 Agent 工作区
+    managed_by: srv_layout
+  - path: /srv/worktrees
+    owner: "{{ nuc_admin_user }}"
+    group: "{{ nuc_admin_user }}"
+    mode: "0750"
+    purpose: 可清理重建的 Git worktree
+    managed_by: srv_layout
+  - path: /srv/stacks
+    owner: "{{ nuc_admin_user }}"
+    group: "{{ nuc_admin_user }}"
+    mode: "0750"
+    purpose: Compose 定义、环境模板与服务文档
+    managed_by: srv_layout
+  - path: /srv/data
+    owner: "{{ nuc_admin_user }}"
+    group: "{{ nuc_admin_user }}"
+    mode: "0750"
+    purpose: 服务持久化数据与备份重点
+    managed_by: srv_layout
+  - path: /srv/automation
+    owner: "{{ nuc_agent_runner_user }}"
+    group: "{{ nuc_agent_runner_user }}"
+    mode: "0750"
+    purpose: 受限自动化工作区
+    managed_by: agent_runner

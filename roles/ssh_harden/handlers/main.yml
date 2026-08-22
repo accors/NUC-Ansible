@@ -1,0 +1,5 @@
+---
+- name: "ssh_harden | reload ssh"
+  ansible.builtin.systemd_service:
+    name: ssh
+    state: reloaded
