@@ -9,3 +9,6 @@ group_vars/all/local.yml
 group_vars/all/vault.yml
 inventory.yml
 files/preseed.cfg
+
+# 部署指南 PDF 是附件，不随仓库分发。
+docs/*.pdf
