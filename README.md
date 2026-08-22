@@ -21,22 +21,57 @@ python3.12 -m venv .venv
 项目固定了 `ansible.posix` 和仍兼容 `ansible-core` 2.16 的
 `community.general` 版本。`collections/` 与 `.venv/` 均不会提交。
 
-## 2. 填写清单、变量与 Vault
+## 2. 首次使用：从模板生成本机配置
 
-1. 修改 `inventory.yml` 中的 LAN 地址、管理员账号和 Python 路径。
-2. 修改 `group_vars/all/main.yml` 中所有 `CHANGE_ME`、示例网络值和版本 pin。
-   `nuc_admin_authorized_keys` 必须至少包含一把已验证的 SSH 公钥。
-3. 创建加密 Vault：
+仓库中只提交结构、非环境相关的默认值和 `.example` 模板。所有与具体机器、网络、
+账号、秘密相关的值都在不提交的本机文件里。克隆之后先生成这四个文件：
 
 ```bash
+cp group_vars/all/local.example.yml group_vars/all/local.yml
 cp group_vars/all/vault.example.yml group_vars/all/vault.yml
+cp inventory.example.yml inventory.yml
+cp files/preseed.example.cfg files/preseed.cfg
+# 填入各自的真实值，然后
 .venv/bin/ansible-vault encrypt group_vars/all/vault.yml
-.venv/bin/ansible-vault edit group_vars/all/vault.yml
 ```
 
-真实的 `group_vars/all/vault.yml` 已被 `.gitignore` 排除。Cloudflare tunnel token
-与 Restic 密码只放在该加密文件中；管理员 Codex 登录态、Paseo 密码、SSH 私钥和
-agent-runner API key 不得放入 Vault 或仓库。
+这四个文件都已被 `.gitignore` 排除。各自要填什么：
+
+| 文件 | 填什么 |
+|---|---|
+| `group_vars/all/local.yml` | `nuc_admin_user`、`nuc_admin_authorized_keys`、`nuc_lan_cidr`、`nuc_tailscale_ipv4`、`nuc_access_hostname` |
+| `group_vars/all/vault.yml` | `vault_nuc_restic_password`、`vault_nuc_cloudflared_tunnel_token` |
+| `inventory.yml` | NUC 的 LAN 地址与 `ansible_user` |
+| `files/preseed.cfg` | 管理员用户名、密码哈希、SSH 公钥 |
+
+`group_vars/all/` 下的 yml 按字母序加载且后者覆盖前者，`local.yml` 排在 `main.yml`
+之后，因此不需要额外配置。每一项的用途、实测命令与约束见 `main.yml` 顶部的注释，
+变量清单以 `CONVENTIONS.md` 第 2 节为准。
+
+`nuc_admin_authorized_keys` 必须至少包含一把**已经验证过能登录**的公钥，并且要覆盖
+所有需要保留的公钥：`ssh_harden` 以 `exclusive: true` 写入 `~/.ssh/authorized_keys`，
+未列出的公钥会在关闭密码认证的同一次运行中被移除。
+
+### `files/preseed.cfg` 的两处凭据占位
+
+`preseed.example.cfg` 里 `<<< >>>` 标出的两处必须自己生成，不要提交：
+
+```bash
+# 1. <<<PASSWORD_HASH>>> —— 管理员账号的密码哈希
+#    mkpasswd 由 whois 包提供：sudo apt install whois
+mkpasswd -m sha-512
+
+# 2. <<<SSH_PUBLIC_KEY>>> —— 管理员账号的 SSH 公钥，整行照抄
+ssh-keygen -t ed25519 -C "agent-nuc admin"   # 还没有密钥时先生成
+cat ~/.ssh/id_ed25519.pub
+```
+
+`mkpasswd` 只把哈希写进 `preseed.cfg`，原始密码不进仓库。这里用的公钥必须与
+`local.yml` 的 `nuc_admin_authorized_keys` 是同一把，否则 preseed 注入的公钥会在
+`ssh_harden` 阶段被移除。
+
+Cloudflare tunnel token 与 Restic 密码只放在加密的 `vault.yml` 中；管理员 Codex
+登录态、Paseo 密码、SSH 私钥和 agent-runner API key 不得放入 Vault 或仓库。
 
 先验证控制端文件，不连接目标机：
 
@@ -123,3 +158,30 @@ base → ssh_harden → srv_layout → docker → codex → tailscale → paseo
 - unattended-upgrades 已启用，但自动重启保持关闭。
 
 最终验收项目和故障定位命令见 `docs/INTERACTIVE-CHECKLIST.md`。
+
+## 6. 灾难恢复顺序
+
+NUC 整机丢失或重装时按以下顺序恢复。前三步都不依赖 Restic，这是刻意的：Restic
+仓库密码本身不在 NUC 上，也不在本仓库里，否则会形成「要恢复备份得先有备份」的
+循环依赖。
+
+```text
+1. 用 files/preseed.cfg 重装 Debian 13.6
+2. 在控制端 clone 本 repo
+3. 从离线副本还原 group_vars/all/local.yml、vault.yml、inventory.yml
+4. 按第 3 节分阶段跑 playbook，跨过各个人工门禁
+5. 最后用 Restic 恢复 /srv/data
+```
+
+第 1–4 步只需要离线保管的凭据（密码哈希、SSH 私钥、Restic 仓库地址与密码、
+Cloudflare token），把机器重新收敛到第一阶段状态；数据恢复是最后一步，此时
+`restic` role 已经配置好仓库和环境文件，可以直接：
+
+```bash
+sudo systemd-run --wait --pipe --collect \
+  --property=EnvironmentFile=/etc/restic/agent-nuc.env \
+  /usr/bin/restic restore latest --target / --include /srv/data
+```
+
+必须离线保管、且不只有一份的内容见 `docs/INTERACTIVE-CHECKLIST.md`：Restic 仓库
+地址与密码、管理员 SSH 私钥、Vault 密码。丢失 Restic 密码即所有备份无法解密。
