@@ -32,6 +32,11 @@
 # nuc_access_hostname       string
 #   Cloudflare Published application 的 Hostname，必须与 Dashboard 中完全一致，
 #   并会写入 Paseo config.json 的 daemon.hostnames。（CONVENTIONS 2.1、PDF 8.5、10.4）
+#
+# nuc_restic_repository     string
+#   Restic 备份仓库地址：本地路径或远端 URL（sftp:/s3:/rest: 等）。URL 中不得嵌入
+#   账号、密码或 token，凭据一律走 vault_nuc_restic_password。该地址会暴露备份位置
+#   与内网主机名，因此不写入提交进仓库的 main.yml。（CONVENTIONS 2.4、PDF 12.2）
 
 # --- 以下为非环境相关的默认值，随 repo 提交 ---
 nuc_paseo_port: 6767
@@ -147,7 +152,7 @@ nuc_agent_runner_randomized_delay: 10m
 nuc_agent_runner_timer_enabled: false
 
 nuc_restic_package_version: ""
-nuc_restic_repository: CHANGE_ME
+# nuc_restic_repository 是环境相关值，由 local.yml 提供（见本文件顶部说明）。
 nuc_restic_backup_paths:
   - /srv
   - /etc/ssh

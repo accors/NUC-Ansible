@@ -23,3 +23,7 @@ nuc_tailscale_ipv4: CHANGE_ME
 
 # Cloudflare Published application 的 Hostname，必须与 Dashboard 完全一致。
 nuc_access_hostname: agent.example.invalid
+
+# Restic 备份仓库地址：本地路径或远端 URL。URL 中不得嵌入账号、密码或 token，
+# 凭据走 vault.yml 的 vault_nuc_restic_password。
+nuc_restic_repository: CHANGE_ME
