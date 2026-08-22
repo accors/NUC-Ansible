@@ -158,10 +158,14 @@
     - not ansible_check_mode
     - (_agent_runner_npm_bin | length) == 0
 
+# nuc_codex_system_version 为 latest 时必须省略 version：community.general.npm
+# 用字面量 name@version 与已安装版本做字符串比对，'latest' 永远匹配不上，
+# 会导致每次运行都重装并报 changed。省略后已安装即视为满足；填入精确版本时
+# 仍按 CONVENTIONS 2.3 严格 pin。
 - name: 通过 npm 将 Codex 安装到 /usr/local
   community.general.npm:
     name: "@openai/codex"
-    version: "{{ nuc_codex_system_version }}"
+    version: "{{ omit if (nuc_codex_system_version | string | trim) in ['', 'latest'] else (nuc_codex_system_version | string | trim) }}"
     global: true
     path: /usr/local
     state: present
