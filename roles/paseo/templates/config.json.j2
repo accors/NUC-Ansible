@@ -1,3 +1,13 @@
+{#
+  daemon.listen 监听全接口，LAN 侧的隔离交由 UFW 完成（base role 的 deny 规则）。
+  不绑定 tailscale0 的地址：那会让 daemon 依赖 tailscaled 存活，tailscaled 一挂
+  连 Cloudflare 那条路径也会断，而 cloudflared 与 daemon 本就在同一台机器上。
+
+  hostnames 仍必须包含 nuc_tailscale_ipv4：tailnet 客户端用它做 Host 校验，
+  删掉之后会被拒绝，且现象表现为「连接被拒绝」，极难定位。
+
+  本文件按严格 JSON 渲染，不得引入 // 注释。
+#}
 {
   "$schema": "https://paseo.sh/schemas/paseo.config.v1.json",
   "version": 1,
@@ -5,7 +15,7 @@
     "webUi": { "enabled": true }
   },
   "daemon": {
-    "listen": "{{ nuc_tailscale_ipv4 }}:{{ nuc_paseo_port }}",
+    "listen": "0.0.0.0:{{ nuc_paseo_port }}",
     "hostnames": [
       "{{ nuc_tailscale_ipv4 }}",
       "{{ nuc_access_hostname }}"
