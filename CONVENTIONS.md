@@ -22,9 +22,9 @@
 | `nuc_admin_user` | string | `local.yml` | 5、7.1、8.3 | 已由 Debian 安装器创建的个人管理员；Paseo 与交互式 Codex 使用此账号 |
 | `nuc_admin_authorized_keys` | list[string] | `local.yml` | 7.1 | 至少一把公钥；为空时 `ssh_harden` 必须在关闭密码认证前失败 |
 | `nuc_lan_cidr` | string | `local.yml` | 7.2 | 用 `ip route` 实测；只允许该网段访问 SSH |
-| `nuc_tailscale_ipv4` | string | `local.yml` | 8.5、10.2 | 人工授权后用 `tailscale ip -4` 实测；必须属于 `100.64.0.0/10` |
+| `nuc_tailscale_ipv4` | string | `local.yml` | 8.5、10.2 | 人工授权后用 `tailscale ip -4` 实测；必须属于 `100.64.0.0/10`。**不进入 `daemon.listen`，但必须进入 `daemon.hostnames`**，否则 tailnet 客户端会被 Host 校验拒绝 |
 | `nuc_access_hostname` | string | `local.yml` | 8.5、10.4 | Cloudflare Published application 域名；必须进入 Paseo `daemon.hostnames` |
-| `nuc_paseo_port` | integer | `6767` | 7.3、8.5 | Paseo 只在 `nuc_tailscale_ipv4` 上监听的端口 |
+| `nuc_paseo_port` | integer | `6767` | 7.3、8.5 | Paseo 监听端口；`daemon.listen` 固定为 `0.0.0.0:<port>`，LAN 侧隔离由 UFW 负责 |
 | `nuc_agent_runner_user` | string | `agent-runner` | 11.1 | 无 sudo、无 Docker 组的自动化账号 |
 | `nuc_agent_runner_home` | path | `/var/lib/agent-runner` | 11.1、11.3 | agent-runner 的系统 home |
 | `nuc_agent_runner_workdir` | path | `/srv/automation` | 9.1、11.1、11.3 | 自动化工作目录；必须与 `/srv/workspaces` 平级 |
@@ -45,6 +45,7 @@
 | `nuc_nvme_device` | path | `/dev/nvme0` | 12.4 | smartctl/nvme-cli 监控目标 |
 | `nuc_ufw_lan_ssh_port` | integer | `22` | 7.2 | LAN SSH 端口 |
 | `nuc_ufw_tailscale_ports` | list[integer] | `[22, 6767]` | 7.2、7.3 | `tailscale0` 显式允许端口；第二项必须等于 `nuc_paseo_port` |
+| —（无变量） | — | — | 7.2、7.3 | 另有一条 `deny in from nuc_lan_cidr to nuc_paseo_port/tcp`，复用上述两个变量，不新增契约变量 |
 | `nuc_sshd_hardening_options` | dict | 见 PDF 7.1 | 7.1 | 禁 root、启公钥、禁密码/KbdInteractive/X11 |
 
 ### 2.3 软件版本与服务配置
@@ -205,8 +206,8 @@ role tag 与目录名完全相同，`site.yml` 只按下列顺序表达依赖，
 - 秘密不得进入 task 名、日志、模板 diff 或命令输出；涉及 vault token/password 的 task 必须 `no_log: true`。不得提交真实密码、token、密钥、公钥指纹。
 - `docker` 必须读取并递归合并现有 `/etc/docker/daemon.json`，保留契约外已有键；不得整体覆盖。
 - `ssh_harden` 必须先落地 `authorized_keys`，再写 `10-hardening.conf`；写配置的任务必须带 `validate: /usr/sbin/sshd -t -f %s`。
-- UFW 必须含 LAN SSH 规则与 `tailscale0` 上的 22/6767；接口未出现不影响先写规则。
-- Paseo `config.json` 是唯一配置来源；unit 的 `ExecStart` 除 `daemon start --foreground` 外不得传配置参数。
+- UFW 必须含 LAN SSH 规则、`tailscale0` 上的 22/6767，以及一条显式拒绝 `nuc_lan_cidr` 访问 `nuc_paseo_port` 的规则；接口未出现不影响先写规则。
+- Paseo `config.json` 是唯一配置来源；unit 的 `ExecStart` 除 `daemon start --foreground` 外不得传配置参数。`daemon.listen` 固定 `0.0.0.0:<port>`，不绑定 `tailscale0` 地址——绑定会让 daemon 依赖 tailscaled 存活，把 Cloudflare Access 那条路径一并拖下水；unit 中也不得再加等待 tailscale 接口的 `ExecStartPre`。
 - Paseo user unit PATH 必须含 `nuc_codex_admin_bin_dir` 的真实探测值；不得照抄固定 PATH。`loginctl enable-linger` 必须先于任何 `systemctl --user`，后者必须显式传 `XDG_RUNTIME_DIR=/run/user/{{ nuc_admin_uid }}`。
 - agent-runner 的 Codex 必须安装为 `/usr/local/bin/codex`；`ProtectHome=yes` 下 `HOME`/`CODEX_HOME` 指向 `/var/lib/agent-runner`，`ReadWritePaths` 只含 `/srv/automation` 与 `/var/lib/agent-runner`。
 - agent-runner 不得加入 `sudo`、`docker` 或其他特权组，不得获得 Docker socket。

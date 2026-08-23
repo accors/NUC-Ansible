@@ -28,7 +28,10 @@
 
 - [ ] 运行 `--tags base`。
 - [ ] 检查 `sudo ufw status verbose`：默认拒绝入站；LAN CIDR 只允许 TCP/22；
-  `tailscale0` 允许 TCP/22 和 TCP/6767。
+  `tailscale0` 允许 TCP/22 和 TCP/6767；另有一条显式 `DENY IN` 挡住
+  LAN CIDR 访问 TCP/6767。
+  这条 deny 现在是 Paseo 端口在 LAN 侧的**唯一**隔离手段（daemon 监听
+  `0.0.0.0`），必须逐条核对存在，不能只看默认策略。
 - [ ] 检查四个 sleep target 已 masked、`unattended-upgrades` 已运行且自动重启为 false、
   `smartd` 和 journald 上限生效。
 
@@ -65,8 +68,11 @@
 - [ ] 运行 `--tags codex,tailscale,paseo`。前两个 tag 会重新导出 Paseo 所需的
   Codex 路径和 Tailscale 地址；首次执行在写入 `~/.paseo/config.json` 后会因密码门禁
   有意停止。
-- [ ] 检查 `config.json`：`daemon.listen` 是 `<100.x>:6767`，`hostnames` 同时含
+- [ ] 检查 `config.json`：`daemon.listen` 是 `0.0.0.0:6767`，`hostnames` 同时含
   `<100.x>` 与 `nuc_access_hostname`，`relay.enabled` 为 `false`。
+  `hostnames` 里的 `<100.x>` 不可省：它已经不出现在 `listen` 里，但 tailnet 客户端
+  仍用它做 Host 校验。删掉之后 tailnet 访问会被拒绝，而现象看起来像「连接被拒绝」，
+  很容易误判成网络或防火墙问题。
 - [ ] **人工：以 `<admin>` 身份执行 `paseo daemon set-password`**（PDF 8.5、8.6）。
   如果当前 shell 找不到命令，先把 `~/.local/npm/bin` 加入 `PATH`。密码不得写入 Vault、
   group vars、shell 历史或仓库。
@@ -80,14 +86,24 @@
   sudo ss -lntp | grep ':6767'
   ```
 
-  `6767` 必须只监听配置的 Tailscale IPv4，不得监听 `0.0.0.0`、LAN IP 或公网地址。
+  `6767` 应当监听 `0.0.0.0`。这是预期结果，不是配置错误——LAN 侧的隔离由 B1 里那条
+  UFW deny 规则负责，不再由 bind 地址负责。
+
+- [ ] **故障树须知**：从一台未加入 tailnet 的 LAN 设备探测
+  `<NUC 的 LAN IP>:6767`，预期仍然是连不上（UFW 默认 DROP，表现为超时而非
+  connection refused）。**现象与改动前一致，原因已经不同**：改动前是内核层没在这个
+  地址上监听，改动后是监听着但被过滤器挡住。排查时不要把「探测不通」当成
+  「daemon 没起来」的证据，先看 `ss -lntp` 和 `ufw status verbose`。
 
 ## D. Cloudflare 外部入口：`cloudflared` 之前
 
 - [ ] **人工：在 Cloudflare Dashboard 接入域名**（PDF 10.3-10.5）。
 - [ ] **人工：Create tunnel**，选择 cloudflared connector，并保存 tunnel service token。
 - [ ] **人工：创建 Published application**。公开 hostname 必须等于
-  `nuc_access_hostname`，origin service 必须是 `http://<Tailscale-IPv4>:6767`。
+  `nuc_access_hostname`，origin service 必须是 `http://127.0.0.1:6767`。
+  **不要填 Tailscale 地址**：cloudflared 与 Paseo daemon 在同一台机器上，走 loopback
+  即可。填 `<100.x>` 会让这条每天在用的路径平白依赖 tailscaled 存活——tailscaled
+  一挂，tailnet 和 Access 两条路径同时断，人在外面无法补救。
 - [ ] **人工：创建 Access self-hosted application 与 Allow policy**。只允许预期身份，
   启用身份提供方 MFA；不得创建 Bypass policy。
 - [ ] 把 service token 只写入加密 `group_vars/all/vault.yml` 的

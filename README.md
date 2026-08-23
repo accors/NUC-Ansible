@@ -151,7 +151,13 @@ base → ssh_harden → srv_layout → docker → codex → tailscale → paseo
      → cloudflared → agent_runner → restic
 ```
 
-- Paseo 只监听 Tailscale IPv4，relay 关闭；公网入口由 Cloudflare Access 保护。
+- Paseo 监听 `0.0.0.0:6767`，relay 关闭；LAN 侧由 UFW 显式拒绝，tailnet 侧由
+  `tailscale0` 的 allow 规则放行，公网入口由 Cloudflare Access 保护。cloudflared 与
+  daemon 同机，origin 走 `http://127.0.0.1:6767`，不经过 tailnet 地址——因此
+  tailscaled 挂掉只影响 tailnet 那一条路径，Access 路径不受牵连。
+- `nuc_tailscale_ipv4` 仍然必需：它不在 `daemon.listen` 里，但必须在
+  `daemon.hostnames` 里，否则 tailnet 客户端会被 Host 校验拒绝，且现象看起来像
+  「连接被拒绝」。
 - Docker 不把管理员或 agent-runner 加入 `docker` 组。
 - `/srv/automation` 与 `/srv/workspaces` 平级，且只由 agent-runner 拥有。
 - agent-runner 的 Codex 位于 `/usr/local/bin`，凭据只由 systemd 加密凭据加载。
