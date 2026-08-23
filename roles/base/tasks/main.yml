@@ -111,6 +111,17 @@
     proto: tcp
   loop: "{{ nuc_ufw_tailscale_ports }}"
 
+# Paseo daemon 监听 0.0.0.0（见 paseo role 的 config.json）。default deny incoming
+# 已经挡住 LAN，这条 deny 是显式声明：让 `ufw status` 直接读得出「LAN 不得访问
+# Paseo 端口」，也避免日后有人在前面插入宽泛的 allow 时静默放行。
+- name: 显式拒绝 LAN 网段访问 Paseo 端口
+  community.general.ufw:
+    rule: deny
+    direction: in
+    src: "{{ nuc_lan_cidr }}"
+    port: "{{ nuc_paseo_port }}"
+    proto: tcp
+
 - name: 启用 UFW
   community.general.ufw:
     state: enabled
