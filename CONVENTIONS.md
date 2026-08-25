@@ -5,9 +5,9 @@
 ## 1. 适用范围与事实来源
 
 - 目标系统：全新 Debian 13.6 (`trixie`, `amd64`) 上的 ASUS NUC 13 Pro。
-- 第一阶段只部署 Debian 基础防护、SSH、Docker、Codex、Tailscale、Paseo、cloudflared、受限 agent-runner 与 Restic。
+- 第一阶段只部署 Debian 基础防护、SSH、Docker、Codex、Tailscale、Paseo、cloudflared、受限 agent-runner、只读 ops-agent 与 Restic。
 - 同一事项发生冲突时，优先级为：本契约的跨 role 接口 > PDF v1.4 的对应章节 > role 内部实现细节。
-- v1.4 章节映射：`base` 见 6.1、6.3、6.4、7.2、7.3、12.4、13.2；`ssh_harden` 见 7.1；`srv_layout` 见 9.1；`docker` 见 9.2、9.3；`codex` 见 8.1、11.3；`tailscale` 见 8.4、10.1、10.2；`paseo` 见 8.4-8.6；`cloudflared` 见 10.3-10.5；`agent_runner` 见 11.1-11.3；`restic` 见 12.1-12.4。
+- v1.4 章节映射：`base` 见 6.1、6.3、6.4、7.2、7.3、12.4、13.2；`ssh_harden` 见 7.1；`srv_layout` 见 9.1；`docker` 见 9.2、9.3；`codex` 见 8.1、11.3；`tailscale` 见 8.4、10.1、10.2；`paseo` 见 8.4-8.6；`cloudflared` 见 10.3-10.5；`agent_runner` 见 11.1-11.3；`ops_agent` 来自任务补充的观察者设计；`restic` 见 12.1-12.4。
 
 ## 2. 变量命名表
 
@@ -28,7 +28,11 @@
 | `nuc_agent_runner_user` | string | `agent-runner` | 11.1 | 无 sudo、无 Docker 组的自动化账号 |
 | `nuc_agent_runner_home` | path | `/var/lib/agent-runner` | 11.1、11.3 | agent-runner 的系统 home |
 | `nuc_agent_runner_workdir` | path | `/srv/automation` | 9.1、11.1、11.3 | 自动化工作目录；必须与 `/srv/workspaces` 平级 |
-| `nuc_agent_runner_codex_home` | path | `/var/lib/agent-runner/codex` | 11.1、11.3 | systemd unit 的 `CODEX_HOME` |
+| `nuc_agent_runner_codex_home` | path | `/var/lib/agent-runner/codex` | 11.1、11.3 | systemd unit 的独立 `CODEX_HOME` 与 OAuth 登录缓存目录 |
+| `nuc_ops_agent_user` | string | `ops-agent` | 任务补充 | 仅加入 `systemd-journal`，不得加入 `sudo`、`docker`、`disk` |
+| `nuc_ops_agent_home` | path | `/home/ops-agent` | 任务补充 | 独立账号 home，必须为 `0700` |
+| `nuc_ops_agent_workspace` | path | `/var/lib/openclaw-ops-agent/workspace` | 任务补充 | root 控制启动指令；只给 memory/reports 运行时写权限 |
+| `nuc_ops_agent_gateway_port` | integer | `18789` | OpenClaw 官方默认 | 只允许 loopback Gateway 使用，不加入 UFW 放行端口 |
 | `nuc_timezone` | string | `Australia/Melbourne` | 5、13.2 | timer 与主机使用的时区 |
 | `nuc_debian_codename` | string | `trixie` | 4、9.2 | 第三方 APT 仓库发行代号 |
 | `nuc_architecture` | string | `amd64` | 4、9.2 | APT 仓库架构 |
@@ -47,6 +51,7 @@
 | `nuc_ufw_tailscale_ports` | list[integer] | `[22, 6767]` | 7.2、7.3 | `tailscale0` 显式允许端口；第二项必须等于 `nuc_paseo_port` |
 | —（无变量） | — | — | 7.2、7.3 | 另有一条 `deny in from nuc_lan_cidr to nuc_paseo_port/tcp`，复用上述两个变量，不新增契约变量 |
 | `nuc_sshd_hardening_options` | dict | 见 PDF 7.1 | 7.1 | 禁 root、启公钥、禁密码/KbdInteractive/X11 |
+| `nuc_confirm_key_removal` | boolean | `false` | 7.1、安全门禁 | 仅当 preflight 列出的现有公钥确认可删除时以 extra-var 临时设为 `true` |
 
 ### 2.3 软件版本与服务配置
 
@@ -72,19 +77,19 @@ PDF v1.4 只明确固定 Debian 13.6 与 Node.js 22 LTS。其余软件没有给�
 | `nuc_cloudflared_enable_service` | boolean | `true` | 10.4 | Dashboard 已建 tunnel 且 vault token 已填后安装/启用 service |
 | `nuc_cloudflared_config_dir` | path | `/etc/cloudflared` | 10.4 | token 文件所在目录，`0700 root:root` |
 | `nuc_cloudflared_token_path` | path | `/etc/cloudflared/token` | 10.4 | tunnel token 文件，`0600 root:root`；unit 以 `--token-file` 读取 |
+| `nuc_openclaw_version` | string | `2026.8.1-beta.2` | 任务补充 | npm 上与已复核 mode/SQLite approvals/policy schema 匹配的精确预发布版；升级前必须重审 |
 | `nuc_restic_package_version` | string | `""` | 6.1、12.2 | 空值表示 Debian 13.6 当前候选 |
 
-### 2.4 agent-runner 与 Restic
+### 2.4 agent-runner、ops_agent 与 Restic
 
 | 变量 | 类型 | 默认值 | 来源 | 说明 |
 |---|---|---|---|---|
-| `nuc_agent_runner_credential_path` | path | `/etc/credstore.encrypted/agent-codex-api-key` | 11.3 | Ansible 只 `stat`，绝不创建凭据 |
-| `nuc_agent_runner_task_prompt` | string | `执行每日自动化任务，并把结果写入 reports/` | 11.3 | `codex exec` 的明确任务 |
+| `nuc_agent_runner_task_prompt` | string | `执行每日自动化任务，并把结果写入 reports/` | 11.3 | 第一阶段占位文案；必须替换成具体任务后才允许启用 timer |
 | `nuc_agent_runner_schedule` | string | `*-*-* 07:30:00 Australia/Melbourne` | 11.3 | systemd timer `OnCalendar` |
 | `nuc_agent_runner_randomized_delay` | string | `10m` | 11.3 | timer 随机延迟 |
-| `nuc_agent_runner_timer_enabled` | boolean | `false` | 11.3 | 人工首次运行成功后改为 `true` |
+| `nuc_agent_runner_timer_enabled` | boolean | `false` | 11.3 | 第一阶段保持 `false`；只有具体 prompt 经人工 service 验收后才改为 `true` |
 | `nuc_restic_repository` | string | `local.yml` | 12.2 | 仓库路径或不含嵌入凭据的远端 URL；会暴露备份位置，不写入 main.yml |
-| `nuc_restic_backup_paths` | list[path] | `/srv`、`/etc/ssh`、`/etc/systemd/system` | 12.1、12.2 | 每晚备份范围 |
+| `nuc_restic_backup_paths` | list[path] | `/srv`、`/etc/ssh`、`/etc/systemd/system`、ops 的 `MEMORY.md`/`memory`/`reports` | 12.1、12.2、任务补充 | 每晚备份范围；不备份可由 Ansible 重建的 ops 指令与 policy |
 | `nuc_restic_excludes` | list[string] | 见下 | 8.2、12.2 | 排除缓存、worktree、依赖与 Codex 登录态 |
 | `nuc_restic_keep` | dict | `{daily: 7, weekly: 4, monthly: 6, yearly: 1}` | 12.2、12.3 | `forget --prune` 保留策略 |
 | `nuc_restic_schedule` | string | `*-*-* 02:30:00 Australia/Melbourne` | 12.3 | nightly timer |
@@ -114,8 +119,12 @@ nuc_restic_excludes:
 |---|---|---|
 | `vault_nuc_restic_password` | Restic 独立随机长密码 | 12.2 |
 | `vault_nuc_cloudflared_tunnel_token` | Dashboard 创建 tunnel 后得到的 service token | 10.4 |
+| `vault_nuc_ops_agent_gateway_token` | loopback ops Gateway 的独立随机 token；目标机上通过 file SecretRef 读取 | 任务补充 |
 
-下列内容不进入 Ansible Vault：管理员 `~/.codex/auth.json`、Paseo 内层密码、个人 SSH 私钥、真实公钥指纹、agent-runner 的 OpenAI API key。最后一项只允许通过 `systemd-creds` 人工写入 `nuc_agent_runner_credential_path`。
+下列内容不进入 Ansible Vault：管理员 `~/.codex/auth.json`、agent-runner
+`CODEX_HOME` 与 ops OpenClaw state 内的 OAuth 登录缓存、Paseo 内层密码、个人 SSH
+私钥和真实公钥指纹。三处 OpenAI 接入均使用 ChatGPT/Codex OAuth；本项目不接受、
+存储或注入 `OPENAI_API_KEY`。
 
 ### 2.6 运行时 fact（不得写入 group_vars）
 
@@ -155,8 +164,18 @@ nuc_restic_excludes:
 | 管理员 `~/.paseo/config.json` | 管理员 | `0600` | Paseo 唯一配置来源 | `paseo` |
 | 管理员 `~/.config/systemd/user` | 管理员 | `0755` | user unit 目录 | `paseo` |
 | `/var/lib/agent-runner` | agent-runner | `0750` | 受限账号 home | `agent_runner` |
-| `/var/lib/agent-runner/codex` | agent-runner | `0750` | `CODEX_HOME` | `agent_runner` |
-| `/etc/credstore.encrypted` | `root:root` | `0700` | systemd 加密凭据目录；只创建目录 | `agent_runner` |
+| `/var/lib/agent-runner/codex` | agent-runner | `0700` | `CODEX_HOME` 与 OAuth 登录缓存；不备份 | `agent_runner` |
+| `/home/ops-agent` | `ops-agent:ops-agent` | `0700` | ops 独立 home | `ops_agent` |
+| `/home/ops-agent/.openclaw` | `ops-agent:ops-agent` | `0700` | OpenClaw 可变 state 与认证资料 | `ops_agent` |
+| `/var/lib/openclaw-ops-agent/workspace` | `root:ops-agent` | `0750` | root 控制的 ops 工作区根 | `ops_agent` |
+| `/var/lib/openclaw-ops-agent/workspace/AGENTS.md` | `root:ops-agent` | `0640` | 每会话加载的不可变运行规则 | `ops_agent` |
+| `/var/lib/openclaw-ops-agent/workspace/policy.jsonc` | `root:ops-agent` | `0640` | OpenClaw conformance policy | `ops_agent` |
+| `/var/lib/openclaw-ops-agent/workspace/MEMORY.md` | `ops-agent:ops-agent` | `0600` | 跨会话长期趋势 | `ops_agent` |
+| `/var/lib/openclaw-ops-agent/workspace/{memory,reports}` | `ops-agent:ops-agent` | `0700` | 每日记忆与巡检报告 | `ops_agent` |
+| `/etc/openclaw` | `root:ops-agent` | `0750` | ops config、token 与 approvals 导入文件目录 | `ops_agent` |
+| `/etc/openclaw/ops-agent.json` | `ops-agent:ops-agent` | `0600` | Ansible 管理的唯一 OpenClaw 配置 | `ops_agent` |
+| `/etc/openclaw/ops-agent-gateway-token` | `ops-agent:ops-agent` | `0600` | Gateway token file SecretRef 来源；OpenClaw 拒绝 group-readable token，systemd 运行态仍把 `/etc` 设为只读 | `ops_agent` |
+| `/etc/sudoers.d/90-ops-agent-smart` | `root:root` | `0440` | 仅两条固定设备、固定参数 SMART 命令 | `ops_agent` |
 | `/etc/restic` | `root:root` | `0700` | Restic 配置目录 | `restic` |
 | `/etc/restic/agent-nuc.env` | `root:root` | `0600` | 仓库地址与密码环境文件 | `restic` |
 | `/etc/cloudflared` | `root:root` | `0700` | cloudflared token 目录 | `cloudflared` |
@@ -180,6 +199,8 @@ nuc_restic_excludes:
 | `paseo | restart paseo` | `paseo` | 已启用服务的 config/unit 变化 |
 | `cloudflared | restart cloudflared` | `cloudflared` | cloudflared service 配置变化 |
 | `agent_runner | daemon-reload system units` | `agent_runner` | automation service/timer 变化 |
+| `ops_agent | daemon-reload system units` | `ops_agent` | system-level Gateway unit 变化 |
+| `ops_agent | restart gateway` | `ops_agent` | 已验证的 config、policy、token 或 unit 变化 |
 | `restic | daemon-reload system units` | `restic` | backup service/timer 变化 |
 
 ## 5. Tag 与执行顺序
@@ -196,8 +217,9 @@ role tag 与目录名完全相同，`site.yml` 只按下列顺序表达依赖，
 | 6 | `tailscale` | 安装后人工 `sudo tailscale up`，再重跑完成地址校验 |
 | 7 | `paseo` | Codex 已登录、Tailscale 地址已验证；config 写入后人工设密码 |
 | 8 | `cloudflared` | Dashboard 已建 tunnel/Access，token 已写入 vault |
-| 9 | `agent_runner` | Node/npm 可用；人工 systemd-creds 与首次 service 验收 |
-| 10 | `restic` | 仓库地址和 vault 密码已填写 |
+| 9 | `agent_runner` | Node/npm 可用；人工完成独立 Codex OAuth 登录；具体任务出现后才首次验收 service |
+| 10 | `ops_agent` | Node/npm 可用；Gateway token 已写入 Vault；之后人工完成 ChatGPT/Codex OAuth 登录 |
+| 11 | `restic` | 仓库地址和 vault 密码已填写 |
 
 不得创建第二套细分 tag。交互门禁通过布尔变量与清单表达，避免 `paseo:install` 一类带冒号 tag 在不同调用方式中的歧义。
 
@@ -219,8 +241,17 @@ role tag 与目录名完全相同，`site.yml` 只按下列顺序表达依赖，
 - UFW 必须含 LAN SSH 规则、`tailscale0` 上的 22/6767，以及一条显式拒绝 `nuc_lan_cidr` 访问 `nuc_paseo_port` 的规则；接口未出现不影响先写规则。
 - Paseo `config.json` 是唯一配置来源；unit 的 `ExecStart` 除 `daemon start --foreground` 外不得传配置参数。`daemon.listen` 固定 `0.0.0.0:<port>`，不绑定 `tailscale0` 地址——绑定会让 daemon 依赖 tailscaled 存活，把 Cloudflare Access 那条路径一并拖下水；unit 中也不得再加等待 tailscale 接口的 `ExecStartPre`。
 - Paseo user unit PATH 必须含 `nuc_codex_admin_bin_dir` 的真实探测值；不得照抄固定 PATH。`loginctl enable-linger` 必须先于任何 `systemctl --user`，后者必须显式传 `XDG_RUNTIME_DIR=/run/user/{{ nuc_admin_uid }}`。
-- agent-runner 的 Codex 必须安装为 `/usr/local/bin/codex`；`ProtectHome=yes` 下 `HOME`/`CODEX_HOME` 指向 `/var/lib/agent-runner`，`ReadWritePaths` 只含 `/srv/automation` 与 `/var/lib/agent-runner`。
+- agent-runner 的 Codex 必须安装为 `/usr/local/bin/codex`；`ProtectHome=yes` 下
+  `HOME`/`CODEX_HOME` 指向 `/var/lib/agent-runner`，`ReadWritePaths` 只含
+  `/srv/automation` 与 `/var/lib/agent-runner`。认证只允许独立 `CODEX_HOME` 中人工生成的
+  ChatGPT/Codex OAuth 登录态；unit 不得注入 key，并必须用 `UnsetEnvironment` 清除
+  `OPENAI_API_KEY` 与 `OPENAI_ADMIN_KEY`。
 - agent-runner 不得加入 `sudo`、`docker` 或其他特权组，不得获得 Docker socket。
+- `ssh_harden` 在 `exclusive: true` 写入前必须读取现有 `authorized_keys`，按每行前两段（类型 + key 主体）比较；发现移除项时必须在任何文件变更前失败，只有 `-e nuc_confirm_key_removal=true` 才能继续。
+- `paseo` role 开头必须断言 `nuc_codex_admin_bin`、`nuc_codex_admin_bin_dir`、`nuc_tailscale_detected_ipv4` 都由本次 play 产生；缺失时提示使用 `--tags codex,tailscale,paseo`。
+- ops-agent 的附加组必须精确为 `systemd-journal`，不得属于 `sudo`、`docker`、`disk`；SMART 只能走 `/etc/sudoers.d/90-ops-agent-smart` 中设备和参数均写死的两条命令。
+- ops Gateway 必须保持 `bind=loopback`、token file SecretRef、无 channel/webhook/mDNS、`tools.elevated.enabled=false`、`allowRealIpFallback=false`，且不得启用 Docker/browser sandbox 或 Skill Workshop。OpenAI provider 只允许 ChatGPT/Codex OAuth profile，systemd unit 必须清除 OpenAI key 环境变量；模型必须显式走 OpenClaw 原生 runtime，不启用 Codex plugin。`tools.exec.mode=ask` 只表达请求策略；SQLite host approvals 必须同时是 per-agent allowlist、`askFallback=deny`、`autoAllowSkills=false`。
+- ops 的 `AGENTS.md` 与 policy 必须 root-owned；systemd 用 `ProtectSystem=strict` 把 Ansible 配置设为运行态只读。只允许 state、`MEMORY.md`、`memory/`、`reports/` 写入。
 
 ## 7. 禁止自动化与失败契约
 
@@ -229,13 +260,14 @@ role tag 与目录名完全相同，`site.yml` 只按下列顺序表达依赖，
 | 人工步骤 | 流程位置 | role 的允许行为 |
 |---|---|---|
 | BIOS 刷写及 BIOS 设置 | Ansible 之前（PDF 3、13.1） | 不探测、不代劳；清单记录验收项 |
-| 管理员 `codex login` | `codex` 安装后、`paseo` 前（8.1、8.5） | 只运行 `codex login status` 读取状态；未登录时 `fail` 并给命令 |
+| 管理员 `codex login` / `codex login --device-auth` | `codex` 安装后、`paseo` 前（8.1、8.5） | 只运行 `codex login status`；只有输出 `Logged in using ChatGPT` 才通过 |
 | `sudo tailscale up` | `tailscale` 安装后、`paseo` 前（8.4、8.5、10.2） | 只运行 `tailscale ip -4`；无 100.x 或与配置不符时 `fail` |
 | `paseo daemon set-password` | `config.json` 写入后、启用 user unit 前（8.5、8.6） | 以 `nuc_paseo_password_configured` 为人工确认门禁；为 `false` 时 `fail` |
 | Cloudflare Dashboard 域名、Create tunnel、Published application、Access application/policy/MFA | `cloudflared` 安装 service 前（10.4、10.5） | 不调用 Dashboard/API；只消费 vault token 安装本机 service |
-| `sudo systemd-creds encrypt - /etc/credstore.encrypted/agent-codex-api-key` | `agent_runner` 建目录/账号后、启用 automation 前（11.3） | 只 `stat` 凭据文件；不存在时 `fail` 并给命令 |
+| 以 agent-runner 运行 `codex login --device-auth` | `agent_runner` 建目录/账号后、启用 automation 前（11.3） | 只运行 `codex login status`；只有 ChatGPT OAuth 登录才通过 |
+| `openclaw models auth login --provider openai --method device-code --agent ops` | `ops_agent` 完成配置、审计和 Gateway 后 | Ansible 只读列出 profile；必须至少一个且所有 OpenAI profile 均为 `oauth` |
 
-此外，automation timer 首次启用前必须由人手工启动一次 service、检查 journal，并把 `nuc_agent_runner_timer_enabled` 改为 `true`。Restic 密码必须另存离线副本；该备份动作也只写入清单。
+此外，第一阶段必须保持 automation timer 禁用。以后只有在占位 prompt 已替换成具体非确定性任务后，才能由人手工启动一次 service、检查 journal，再把 `nuc_agent_runner_timer_enabled` 改为 `true`。Restic 密码必须另存离线副本；该备份动作也只写入清单。
 
 ## 8. Subagent 写入边界
 

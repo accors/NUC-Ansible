@@ -12,6 +12,28 @@
       管理员 ~/.ssh/authorized_keys，并由人工在另一个终端确认密钥登录后，才能关闭密码登录；
       ssh_harden 已停止，未写入 /etc/ssh/sshd_config.d/10-hardening.conf。
 
+- name: 校验每把管理员公钥至少包含类型与 key 主体
+  ansible.builtin.assert:
+    that:
+      - (_ssh_harden_declared_key | trim).split() | length >= 2
+    fail_msg: >-
+      nuc_admin_authorized_keys 中每一项都必须是完整公钥行，至少包含 key 类型与
+      key 主体；注释字段可以省略或改变。
+  loop: "{{ nuc_admin_authorized_keys }}"
+  loop_control:
+    loop_var: _ssh_harden_declared_key
+    label: "{{ _ssh_harden_declared_key | string | truncate(40, true, '…') }}"
+
+- name: 按类型与 key 主体归一化声明的管理员公钥
+  ansible.builtin.set_fact:
+    _ssh_harden_declared_key_identities: >-
+      {{ (_ssh_harden_declared_key_identities | default([]))
+         + [((_ssh_harden_declared_key | trim).split()[0:2] | join(' '))] }}
+  loop: "{{ nuc_admin_authorized_keys }}"
+  loop_control:
+    loop_var: _ssh_harden_declared_key
+    label: "{{ (_ssh_harden_declared_key | trim).split()[0] }}"
+
 - name: 探测管理员账号的 passwd 条目
   ansible.builtin.getent:
     database: passwd
@@ -58,6 +80,55 @@
     fail_msg: >-
       无法根据管理员 GID={{ _ssh_harden_admin_gid }} 解析主组；
       ssh_harden 未写入任何 SSH 加固配置。
+
+# exclusive=true 会删除未声明的现有条目。此门禁必须位于创建目录、写公钥和
+# 关闭密码认证之前；比较只使用前两段，避免注释字段变化造成误报。
+- name: 探测目标机现有的 authorized_keys
+  ansible.builtin.stat:
+    path: "{{ _ssh_harden_admin_home }}/.ssh/authorized_keys"
+    get_checksum: false
+  register: _ssh_harden_authorized_keys_stat
+
+- name: 读取目标机现有的 authorized_keys
+  ansible.builtin.slurp:
+    src: "{{ _ssh_harden_admin_home }}/.ssh/authorized_keys"
+  register: _ssh_harden_existing_authorized_keys
+  changed_when: false
+  when: _ssh_harden_authorized_keys_stat.stat.exists
+
+- name: 初始化将被移除的公钥清单
+  ansible.builtin.set_fact:
+    _ssh_harden_keys_to_remove: []
+
+- name: 按类型与 key 主体列出将被移除的公钥
+  ansible.builtin.set_fact:
+    _ssh_harden_keys_to_remove: >-
+      {{ _ssh_harden_keys_to_remove + [_ssh_harden_existing_key_line] }}
+  loop: >-
+    {{ ((_ssh_harden_existing_authorized_keys.content | b64decode).splitlines())
+       if (_ssh_harden_existing_authorized_keys.content is defined)
+       else [] }}
+  loop_control:
+    loop_var: _ssh_harden_existing_key_line
+    label: "{{ _ssh_harden_existing_key_line | string | truncate(40, true, '…') }}"
+  when:
+    - _ssh_harden_existing_key_line | trim | length > 0
+    - not ((_ssh_harden_existing_key_line | trim) is match('^#'))
+    - >-
+      ((_ssh_harden_existing_key_line | trim).split()[0:2] | join(' '))
+      not in _ssh_harden_declared_key_identities
+
+- name: 移除现有公钥前要求显式确认
+  ansible.builtin.fail:
+    msg: |-
+      以下 authorized_keys 条目将被 exclusive=true 移除，且本次运行还会关闭密码认证：
+      {{ _ssh_harden_keys_to_remove | join('\n') }}
+
+      请先确认每台仍需登录的设备都有对应公钥；确认无误后加
+      -e nuc_confirm_key_removal=true 重跑。ssh_harden 尚未修改任何文件。
+  when:
+    - _ssh_harden_keys_to_remove | length > 0
+    - not (nuc_confirm_key_removal | bool)
 
 - name: 创建管理员 .ssh 目录
   ansible.builtin.file:

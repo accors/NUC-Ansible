@@ -7,13 +7,22 @@
       - nuc_agent_runner_home == '/var/lib/agent-runner'
       - nuc_agent_runner_workdir == '/srv/automation'
       - nuc_agent_runner_codex_home == '/var/lib/agent-runner/codex'
-      - >-
-        nuc_agent_runner_credential_path ==
-        '/etc/credstore.encrypted/agent-codex-api-key'
     fail_msg: >-
       agent_runner 必须使用契约规定的路径：home=/var/lib/agent-runner，
-      workdir=/srv/automation，CODEX_HOME=/var/lib/agent-runner/codex，
-      credential=/etc/credstore.encrypted/agent-codex-api-key。
+      workdir=/srv/automation，CODEX_HOME=/var/lib/agent-runner/codex。
+
+- name: 启用 timer 前要求明确的非占位任务
+  ansible.builtin.assert:
+    that:
+      - nuc_agent_runner_task_prompt | trim | length > 0
+      - >-
+        (nuc_agent_runner_task_prompt | trim) !=
+        '执行每日自动化任务，并把结果写入 reports/'
+    fail_msg: >-
+      第一阶段必须保持 nuc_agent_runner_timer_enabled=false。以后确有需要时，先把
+      nuc_agent_runner_task_prompt 换成可验收的具体非确定性任务；确定性周期任务应写成
+      Ansible/systemd，而不是交给 agent。随后手工验收 service，最后才可启用 timer。
+  when: nuc_agent_runner_timer_enabled | bool
 
 - name: 筛选唯一由 agent_runner 管理的 /srv 目录
   ansible.builtin.set_fact:
@@ -122,7 +131,7 @@
     state: directory
     owner: "{{ nuc_agent_runner_user }}"
     group: "{{ nuc_agent_runner_user }}"
-    mode: "0750"
+    mode: "0700"
 
 - name: 检查系统 npm 可执行文件
   ansible.builtin.stat:
@@ -212,14 +221,6 @@
       and _agent_runner_codex_stat.stat.isreg
       and _agent_runner_codex_stat.stat.executable
 
-- name: 创建 systemd 加密凭据目录但不创建凭据
-  ansible.builtin.file:
-    path: /etc/credstore.encrypted
-    state: directory
-    owner: root
-    group: root
-    mode: "0700"
-
 - name: 安装 daily Codex automation service
   ansible.builtin.template:
     src: agent-codex-daily.service.j2
@@ -238,34 +239,16 @@
     mode: "0644"
   notify: "agent_runner | daemon-reload system units"
 
-# 先使 unit 文件与 systemd 一致，再检查人工写入的加密凭据。
+# 先使 unit 文件与 systemd 一致，再收敛 timer 状态和检查人工 OAuth 登录态。
 - name: 刷新 systemd system units
   ansible.builtin.meta: flush_handlers
-
-- name: 只读检查加密凭据文件
-  ansible.builtin.stat:
-    path: "{{ nuc_agent_runner_credential_path }}"
-  register: _agent_runner_credential_stat
-
-- name: 凭据缺失时给出 PDF 11.3 的精确人工命令
-  ansible.builtin.fail:
-    msg: >-
-      缺少 {{ nuc_agent_runner_credential_path }}。请在 unit 文件落地后手工执行
-      （PDF 11.3）：
-      sudo systemd-creds encrypt - /etc/credstore.encrypted/agent-codex-api-key
-      ，在提示符中粘贴专用 OPENAI_API_KEY，按 Ctrl-D 结束，然后重跑 agent_runner tag。
-      Ansible 不会执行 systemd-creds、expect 或写入 API key。
-  when:
-    - not ansible_check_mode
-    - not _agent_runner_credential_stat.stat.exists
-      or not _agent_runner_credential_stat.stat.isreg
 
 - name: 检查 daily timer unit 是否已落地
   ansible.builtin.stat:
     path: /etc/systemd/system/agent-codex-daily.timer
   register: _agent_runner_timer_stat
 
-- name: 在首次人工验收前保持 timer 停止且禁用
+- name: 在具体任务通过人工验收前保持 timer 停止且禁用
   ansible.builtin.systemd_service:
     name: agent-codex-daily.timer
     enabled: false
@@ -275,15 +258,50 @@
     - not (nuc_agent_runner_timer_enabled | bool)
     - _agent_runner_timer_stat.stat.exists
 
-- name: 首次人工 service 验收前明确停止流程
+- name: 只读检查 agent-runner Codex 登录状态
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/codex
+      - login
+      - status
+  become: true
+  become_user: "{{ nuc_agent_runner_user }}"
+  environment:
+    HOME: "{{ nuc_agent_runner_home }}"
+    CODEX_HOME: "{{ nuc_agent_runner_codex_home }}"
+    PATH: /usr/local/bin:/usr/bin:/bin
+    OPENAI_API_KEY: ''
+    OPENAI_ADMIN_KEY: ''
+  register: _agent_runner_codex_login_status
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode
+
+- name: 要求 agent-runner 使用 ChatGPT Codex OAuth
   ansible.builtin.fail:
     msg: >-
-      agent-codex-daily.timer 当前不会启用。请先手工验收 service：
-      sudo systemctl start agent-codex-daily.service；
-      sudo journalctl -u agent-codex-daily.service --no-pager。
-      确认成功且无 status=200/CHDIR 或 ProtectHome 错误后，将
-      nuc_agent_runner_timer_enabled 改为 true，再重跑 agent_runner tag
-      （PDF 11.3、13.4）。
+      agent-runner 尚未使用 ChatGPT/Codex OAuth 登录，或当前登录方式不是 ChatGPT。
+      请按交互清单人工运行：
+      sudo -u {{ nuc_agent_runner_user }} -H env
+      CODEX_HOME={{ nuc_agent_runner_codex_home }}
+      /usr/local/bin/codex login --device-auth；完成后用相同 HOME/CODEX_HOME 运行
+      codex login status，必须显示 Logged in using ChatGPT，再重跑 agent_runner tag。
+      本项目不接受 OPENAI_API_KEY，也不创建、备份或分发 OAuth 登录缓存。
+  when: >-
+    not ansible_check_mode and
+    (
+      (_agent_runner_codex_login_status.rc | default(1) | int) != 0 or
+      'Logged in using ChatGPT' not in
+      ((_agent_runner_codex_login_status.stdout | default('')) ~ '\n' ~
+       (_agent_runner_codex_login_status.stderr | default('')))
+    )
+
+- name: 说明第一阶段为何保持 daily timer 禁用
+  ansible.builtin.debug:
+    msg: >-
+      第一阶段按设计保持 agent-codex-daily.timer disabled；当前 prompt 只是占位，
+      不应手工运行 service，也不应把 nuc_agent_runner_timer_enabled 改为 true。
+      以后定义具体任务时，再按交互清单先验收 service、后启用 timer。
   when:
     - not ansible_check_mode
     - not (nuc_agent_runner_timer_enabled | bool)

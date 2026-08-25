@@ -1,0 +1,8 @@
+---
+galaxy_info:
+  role_name: ops_agent
+  author: agent-nuc
+  description: 只读观察与报告用的最小权限 OpenClaw ops agent
+  license: MIT
+  min_ansible_version: "2.16"
+dependencies: []

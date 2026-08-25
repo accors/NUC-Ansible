@@ -21,6 +21,9 @@
 - [ ] 按 `README.md` 第 2 节从 `.example` 模板生成 `group_vars/all/local.yml`、
   `group_vars/all/vault.yml`（加密）、`inventory.yml`、`files/preseed.cfg` 并填完，
   再在控制端通过 lint 与 syntax-check。
+- [ ] 在 GitHub 仓库 **Settings → Advanced Security** 确认 Secret Protection
+  （secret scanning）与 Push protection 均已启用；这只是提交前护栏，不能替代
+  Vault、`.gitignore` 与人工复核。
 
 ## B. 基础防护、SSH 与本地服务
 
@@ -40,6 +43,9 @@
 - [ ] 把至少一把真实公钥写入 `nuc_admin_authorized_keys`；不得放入私钥或占位符。
 - [ ] 确保该公钥已经存在于管理员 `~/.ssh/authorized_keys`，从**第二个终端**新建连接并
   验证仅靠公钥能成功登录；保持原会话打开。
+- [ ] 如果 role 列出将被 `exclusive: true` 移除的现有公钥，逐一按 key 主体确认来源，
+  补齐所有仍需保留的设备公钥。只有确认列出的条目都应删除时，才加
+  `-e nuc_confirm_key_removal=true` 重跑；不得把这个变量长期设为默认 true。
 - [ ] 运行 `--tags ssh_harden`，再从第三个新会话验证公钥登录。确认密码登录、root 登录
   均已关闭后才结束旧会话。
 - [ ] 运行 `--tags srv_layout,docker`，检查 `/srv` 权限矩阵和 Docker 日志轮转配置。
@@ -56,9 +62,11 @@
 
 - [ ] 运行 `--tags codex`。首次执行应安装并探测管理员 Codex 路径；未登录时 role 会
   有意停止。
-- [ ] **人工：以 `<admin>` 身份执行 `codex login`**（PDF 8.1）。完成 ChatGPT 浏览器
-  登录；不要复制 `~/.codex/auth.json`，也不要将它纳入备份。
-- [ ] 执行 `codex login status` 确认登录，再重跑 `--tags codex`。
+- [ ] **人工：以 `<admin>` 身份执行 `codex login`**（PDF 8.1；无浏览器终端可用
+  `codex login --device-auth`）。完成 ChatGPT/Codex OAuth 登录；不要复制
+  `~/.codex/auth.json`，也不要将它纳入备份。
+- [ ] 执行 `codex login status`，确认显示 `Logged in using ChatGPT`，再重跑
+  `--tags codex`；任何 API key 登录都不通过 role 门禁。
 
 ### C2. `tailscale` 安装后、`paseo` 之前
 
@@ -124,26 +132,39 @@
   hostname 应先进入 Cloudflare Access，从允许身份登录后才到 Paseo。
 - [ ] 确认路由器没有给 NUC 配置公网端口转发。
 
-## E. agent-runner：两个人工门禁
+## E. agent-runner：OAuth 门禁与保持 timer 关闭
 
 ### E1. 账号、目录和 unit 落地后
 
 - [ ] 运行 `--tags agent_runner`。第一次应创建受限账号、`/srv/automation`、
-  `/var/lib/agent-runner/codex`、system-level Codex 和 systemd units，然后因凭据不存在
-  而有意停止。
-- [ ] **人工：执行以下命令**（PDF 11.3），粘贴 agent-runner 专用
-  `OPENAI_API_KEY`，按 `Ctrl-D` 结束：
+  `/var/lib/agent-runner/codex`、system-level Codex 和 systemd units，然后因独立 OAuth
+  登录态不存在而有意停止。
+- [ ] **人工：执行以下命令**（PDF 11.3），按页面提示完成 ChatGPT/Codex device-code
+  OAuth 登录：
 
   ```bash
-  sudo systemd-creds encrypt - /etc/credstore.encrypted/agent-codex-api-key
+  sudo -u agent-runner -H env \
+    CODEX_HOME=/var/lib/agent-runner/codex \
+    /usr/local/bin/codex login --device-auth
+
+  sudo -u agent-runner -H env \
+    CODEX_HOME=/var/lib/agent-runner/codex \
+    /usr/local/bin/codex login status
   ```
 
-  不要把 API key 放入命令行、Vault、环境文件或仓库。检查凭据文件是
-  `root:root` 且凭据目录为 `0700`。
-- [ ] 重跑 `--tags agent_runner`。当 `nuc_agent_runner_timer_enabled: false` 时，role 会
-  保持 timer 禁用并在人工验收门禁停止。
+  第二条命令必须显示 `Logged in using ChatGPT`。本项目没有 agent-runner 的 OpenAI
+  API key；`/var/lib/agent-runner/codex` 必须为 `agent-runner:agent-runner 0700`，其中的
+  OAuth 登录缓存不得复制到 Vault、仓库或备份。
+- [ ] 重跑 `--tags agent_runner`。当 `nuc_agent_runner_timer_enabled: false` 时，role 应
+  安全完成并保持 timer disabled，不再为了占位 prompt 故意失败。
 
-### E2. timer 启用之前
+### E2. 将来确有具体任务时，timer 启用之前
+
+- [ ] 第一阶段不要执行本小节。默认 prompt 只是占位，必须保持
+  `nuc_agent_runner_timer_enabled: false`；能由 Ansible/systemd 确定性完成的周期任务
+  继续写成 Ansible/systemd，只有需要非确定性判断的明确任务才交给 agent。
+- [ ] 把 `nuc_agent_runner_task_prompt` 改成有输入、输出与验收标准的具体任务；role 会
+  拒绝为空或仍等于默认占位文案的 prompt。
 
 - [ ] **人工：首次运行并检查 service**：
 
@@ -153,13 +174,77 @@
   sudo journalctl -u agent-codex-daily.service --no-pager -n 200
   ```
 
-- [ ] 确认没有 `status=200/CHDIR`、`ProtectHome`、凭据加载或写权限错误，输出只写入
+- [ ] 确认没有 `status=200/CHDIR`、`ProtectHome`、OAuth 登录或写权限错误，输出只写入
   `/srv/automation`。
 - [ ] 执行 `id agent-runner`，确认没有任何附加组，尤其不属于 `sudo` 或 `docker`。
 - [ ] 将 `nuc_agent_runner_timer_enabled` 改为 `true`，重跑 `--tags agent_runner`，再检查
   `systemctl list-timers agent-codex-daily.timer --all`。
 
-## F. Restic：nightly timer 与恢复能力
+## F. ops-agent：只读观察者与人工 OAuth 登录
+
+- [ ] 用 `openssl rand -hex 32` 生成独立随机 token，只写入加密 `vault.yml` 的
+  `vault_nuc_ops_agent_gateway_token`；该 token 不需要离线保存，灾难恢复时重新生成。
+- [ ] 运行 `--tags ops_agent`。role 应完成 OpenClaw 安装、精确 approvals 导入、policy
+  检查、`security audit --fix`、普通/深度审计与 loopback Gateway 健康检查。
+- [ ] `doctor --lint --severity-min error` 可能在 stderr 提示 `tools.fs` 不会隐式加入
+  `edit`；这是已记录的有意边界：
+  ops 只显式允许 `read`/`write`，而 `edit` 明确位于 deny。确认其 JSON 仍为
+  `ok:true`、`findings:[]`；任何真正的 error finding 都不能接受。
+- [ ] 不带 `--severity-min error` 单独运行 doctor 时，当前 beta 还会建议为已禁用的
+  `heartbeat: 0m` 创建 disabled cron 记录，并提示全局 exec 默认 `deny/off` 比 ops 的
+  per-agent `allowlist/on-miss` 更严格。前者不代表 heartbeat 在运行，后者由
+  `exec-policy show` 的 ops effective scope 复核；不要为消除这两条 warning 运行会改动
+  其他配置的 `doctor --fix`，也不要放宽全局默认值。
+- [ ] 执行 `id ops-agent`，确认 home 是 `0700`，附加组只有 `systemd-journal`，且绝不
+  属于 `sudo`、`docker`、`disk`。确认 `/etc/sudoers.d/90-ops-agent-smart` 只有两条
+  设备与参数都写死的 SMART 命令。
+- [ ] 确认 `/etc/openclaw/ops-agent-gateway-token` 为 `ops-agent:ops-agent 0600`；OpenClaw
+  会拒绝 group-readable 的 SecretRef 文件，运行中的 service 则由 `ProtectSystem=strict`
+  阻止改写 `/etc`。
+- [ ] 检查 `ss -lntp | grep ':18789'`：只能看到 loopback，不能看到 LAN 或 Tailscale
+  地址；`openclaw-ops-agent.service` 必须由 systemd system unit 管理。
+- [ ] **人工：以 ops-agent 身份完成 OpenAI 模型登录**：
+
+  ```bash
+  sudo -u ops-agent -H env \
+    OPENCLAW_CONFIG_PATH=/etc/openclaw/ops-agent.json \
+    OPENCLAW_STATE_DIR=/home/ops-agent/.openclaw \
+    /usr/local/bin/openclaw models auth login \
+      --provider openai --method device-code --agent ops
+  ```
+
+  Ansible 不模拟交互式登录，也不复制其他账号的认证文件。完成后以相同环境运行
+  `openclaw models auth list --provider openai --agent ops --json`，确认所有 OpenAI profile
+  的 `type` 都是 `oauth`，没有 `api_key`，再重跑 `--tags ops_agent`。
+- [ ] 用同一组 `sudo -u ... env` 前缀分别运行 `openclaw approvals get --json`、
+  `openclaw exec-policy show --json`、`openclaw policy check --agent ops --json`、
+  `openclaw security audit --deep --json`；
+  确认 defaults 为 deny、ops 为 allowlist/on-miss、`askFallback=deny`、
+  `autoAllowSkills=false`，且没有 critical finding。固定的 `2026.8.1-beta.2` 在全新 state
+  上可能只出现 `gateway.probe_failed: missing scope: operator.read`：这是该 beta 的无设备
+  `probe` 客户端清空自报 scope 所致，role 只精确接受这一项，并另跑 `openclaw health`
+  验证 Gateway；其他 warning 一律失败。升级后该 warning 消失是正常结果。
+- [ ] 用以下命令做最小功能测试；`uptime`、失败服务和固定 SMART 形状应允许，`id`、
+  `systemctl restart ...`、任意 shell/解释器与未列出的参数必须被拒绝：
+
+  ```bash
+  sudo -u ops-agent -H env \
+    OPENCLAW_CONFIG_PATH=/etc/openclaw/ops-agent.json \
+    OPENCLAW_STATE_DIR=/home/ops-agent/.openclaw \
+    /usr/local/bin/openclaw agent --agent ops \
+    --message "运行 uptime，检查失败服务，然后尝试运行 id；逐项报告是否获准"
+  ```
+
+- [ ] 确认 `AGENTS.md` 与 `policy.jsonc` 为 root-owned，ops 只能写 `MEMORY.md`、
+  `memory/`、`reports/`；journal 内容必须被当作不受信任的数据而非指令。
+- [ ] 第一阶段不配置 channel、webhook、browser、MCP、Docker sandbox 或定时巡检。
+  若以后验证单向 `--deliver`，必须先让目标 channel 的入站 DM 完全 disabled，并实测
+  “可出站、回消息不触发 turn”；在实测前不得把该推论当成安全保证。
+- [ ] 目标机没有 Ansible repo、Vault 或提权能力，因此暂不允许 ops 直接跑
+  `ansible-playbook --check --diff`。以后只能通过 root 控制、参数固定、仅产出报告的
+  wrapper 增加该能力，不能把 repo 凭据或宽泛 sudo 交给 ops。
+
+## G. Restic：nightly timer 与恢复能力
 
 - [ ] 为 `vault_nuc_restic_password` 生成独立随机长密码，并**人工保存一份离线副本**。
   `nuc_restic_repository` 不得在 URL 中嵌入账号、密码或 token。
@@ -197,25 +282,28 @@
 
 - [ ] 从仓库恢复一个测试文件到临时目录并核对内容；没有演练过恢复的备份不算验收完成。
 
-## G. 第一阶段最终验收
+## H. 第一阶段最终验收
 
-- [ ] 重启后，所有 masked sleep target、UFW、`tailscaled`、Paseo、cloudflared 和两个
-  timer 都保持预期状态。
+- [ ] 重启后，所有 masked sleep target、UFW、`tailscaled`、Paseo、cloudflared、
+  OpenClaw ops Gateway 和两个 timer 都保持预期状态。
 - [ ] 实际断电再上电后，BIOS 自动开机；Debian、网络和受控服务恢复。
 - [ ] LAN 与 Tailscale SSH 均能使用公钥；root/密码登录保持关闭。
-- [ ] `ss -lntp` 显示 Paseo 监听 `0.0.0.0:6767`（这是预期结果）；relay 关闭。
-- [ ] `ufw status verbose` 里那条拒绝 LAN 访问 6767 的规则存在——它是该端口在
-  LAN 侧唯一的隔离手段。
+- [ ] `ss -lntp` 显示 Paseo 监听 `0.0.0.0:6767`（这是预期结果，不是配置错误）；
+  ops Gateway 的 18789 只监听 loopback；Paseo relay 关闭。
+- [ ] `ufw status verbose` 里 LAN 访问 6767 被 deny、tailnet 经 `tailscale0` 被 allow。
+  **那条 deny 是 6767 在 LAN 侧唯一的隔离手段**，不像别处还有第二层。
 - [ ] 路由器和主机没有公网入站端口，外部访问必须经过 Cloudflare Access；MFA 与
   Allow policy 生效且没有 Bypass。
 - [ ] Docker `daemon.json` 保留已有键，并启用 `json-file` 的 `10m`/`3` 日志轮转。
 - [ ] `/srv/automation` 与 `/srv/workspaces` 平级；agent-runner 无 sudo、Docker socket
   或管理员 home 访问权。
+- [ ] ops-agent 只有 journal 读取与两条固定 SMART sudoers；无 channel、Docker socket、
+  `disk` 组或系统修改能力，`MEMORY.md`/`memory`/`reports` 已进入 Restic 范围。
 - [ ] Restic 最近一次备份、`check --read-data-subset=<nuc_restic_read_data_subset>`
   和测试恢复均成功，离线密码可用。
 - [ ] 对已跨过所有人工门禁的完整配置运行 `--check --diff`，无意外变更。
 
-## H. 离线凭据清单
+## I. 离线凭据清单
 
 以下内容必须存在 NUC 之外，且不只有一份。它们同时是 `README.md` 第 6 节灾难恢复顺序的前置条件：
 没有这些，重装后的机器无法重新收敛，备份也无法解密。
@@ -223,19 +311,22 @@
 - [ ] Restic 仓库 ID（`nuc_restic_expected_repository_id`）
 - [ ] Restic 仓库地址与密码（`nuc_restic_repository`、`vault_nuc_restic_password`）
 - [ ] Ansible Vault 密码（解密 `group_vars/all/vault.yml` 用）
-- [ ] `group_vars/all/local.yml` 与 `inventory.yml` 的内容，或它们的备份位置
-- [ ] 管理员 SSH 私钥，以及 `files/preseed.cfg` 里那个账号的密码
-- [ ] 随上述内容一并记录：日期、机器标识（`agent-nuc`）、以及这些凭据用来做什么的
-      一句话说明
+- [ ] 管理员 SSH 私钥（公钥在恢复时用 `ssh-keygen -y -f <private-key>` 重新导出）
 
-## I. 设备失窃处置清单（PDF 5.3）
+随这三项一并记录日期、机器标识（`agent-nuc`）和用途说明即可；`local.yml`、
+`vault.yml`、`inventory.yml`、preseed 密码哈希、Cloudflare token 与 ops Gateway token
+都可按 `README.md` 第 6 节重新生成，不是额外离线保管对象。
+
+## J. 设备失窃处置清单（PDF 5.3）
 
 NUC 物理丢失或疑似被入侵时立即执行，顺序无强制依赖但都要做完：
 
 - [ ] 从 tailnet 删除该 NUC 设备
 - [ ] 撤销 Cloudflare Access 会话与设备授权
-- [ ] 轮换该节点的 OpenAI/Codex key（管理员登录态与 agent-runner 的
-      `/etc/credstore.encrypted/agent-codex-api-key` 两处）
+- [ ] 在 ChatGPT/OpenAI 账号安全后台手动 revoke 与该节点有关的 Codex OAuth 登录会话
+      （管理员 Codex、agent-runner Codex、ops OpenClaw）；本配置没有可轮换的 OpenAI API key
 - [ ] 更换 Restic repo 密码并同步离线副本
 - [ ] 检查并轮换所有 Git 远端 deploy key
 - [ ] 轮换 Cloudflare tunnel token 与 Ansible Vault 密码
+- [ ] 重新生成 `vault_nuc_ops_agent_gateway_token`；在可信重建主机上分别重新完成三处
+      ChatGPT/Codex OAuth 登录，不复用丢失主机上的缓存

@@ -4,8 +4,8 @@
 收敛到部署指南第一阶段状态。附件实际版本为 **v1.4**；任务说明里的 v1.3 章节号已按
 语义映射到 v1.4。跨 role 接口、变量和权限的唯一约定见 `CONVENTIONS.md`。
 
-Ansible 不会代替人执行 BIOS、浏览器授权、交互式登录、Paseo 密码设置、
-`systemd-creds` 输入或 Cloudflare Dashboard 配置。完整顺序见
+Ansible 不会代替人执行 BIOS、浏览器授权、交互式 OAuth 登录、Paseo 密码设置或
+Cloudflare Dashboard 配置。完整顺序见
 `docs/INTERACTIVE-CHECKLIST.md`。
 
 ## 1. 控制端准备
@@ -40,7 +40,7 @@ cp files/preseed.example.cfg files/preseed.cfg
 | 文件 | 填什么 |
 |---|---|
 | `group_vars/all/local.yml` | `nuc_admin_user`、`nuc_admin_authorized_keys`、`nuc_lan_cidr`、`nuc_tailscale_ipv4`、`nuc_access_hostname`、`nuc_restic_repository` |
-| `group_vars/all/vault.yml` | `vault_nuc_restic_password`、`vault_nuc_cloudflared_tunnel_token` |
+| `group_vars/all/vault.yml` | `vault_nuc_restic_password`、`vault_nuc_cloudflared_tunnel_token`、`vault_nuc_ops_agent_gateway_token` |
 | `inventory.yml` | NUC 的 LAN 地址与 `ansible_user` |
 | `files/preseed.cfg` | 管理员用户名、密码哈希、SSH 公钥 |
 
@@ -50,7 +50,10 @@ cp files/preseed.example.cfg files/preseed.cfg
 
 `nuc_admin_authorized_keys` 必须至少包含一把**已经验证过能登录**的公钥，并且要覆盖
 所有需要保留的公钥：`ssh_harden` 以 `exclusive: true` 写入 `~/.ssh/authorized_keys`，
-未列出的公钥会在关闭密码认证的同一次运行中被移除。
+未列出的公钥会在关闭密码认证的同一次运行中被移除。role 会先读取现有文件，并按
+每行前两段（类型 + key 主体，不含可变注释）列出移除项；只要清单非空，就会在任何
+文件变更前停止。确认每台仍需登录的设备都已覆盖后，才可临时加
+`-e nuc_confirm_key_removal=true` 重跑。
 
 ### `files/preseed.cfg` 的两处凭据占位
 
@@ -70,8 +73,10 @@ cat ~/.ssh/id_ed25519.pub
 `local.yml` 的 `nuc_admin_authorized_keys` 是同一把，否则 preseed 注入的公钥会在
 `ssh_harden` 阶段被移除。
 
-Cloudflare tunnel token 与 Restic 密码只放在加密的 `vault.yml` 中；管理员 Codex
-登录态、Paseo 密码、SSH 私钥和 agent-runner API key 不得放入 Vault 或仓库。
+Cloudflare tunnel token、ops Gateway token 与 Restic 密码只放在加密的 `vault.yml`
+中；管理员 Codex、agent-runner Codex 与 ops OpenClaw 的 OpenAI 接入都使用
+ChatGPT/Codex OAuth，不使用 `OPENAI_API_KEY`。这些 OAuth 登录缓存、Paseo 密码和
+SSH 私钥不得放入 Vault、仓库或备份。
 
 先验证控制端文件，不连接目标机：
 
@@ -103,7 +108,8 @@ Cloudflare tunnel token 与 Restic 密码只放在加密的 `vault.yml` 中；�
 随后依次跨过人工门禁：
 
 1. 运行 `--tags codex`。首次安装后会在未登录时有意失败；以管理员身份执行
-   `codex login`，再重跑同一 tag。
+   `codex login`（无浏览器终端可用 `codex login --device-auth`），确认
+   `codex login status` 显示 `Logged in using ChatGPT`，再重跑同一 tag。
 2. 运行 `--tags tailscale`。首次安装后会在未授权时有意失败；人工执行
    `sudo tailscale up`，把 `tailscale ip -4` 的唯一地址写入
    `nuc_tailscale_ipv4`，再重跑同一 tag。
@@ -112,10 +118,17 @@ Cloudflare tunnel token 与 Restic 密码只放在加密的 `vault.yml` 中；�
    `paseo daemon set-password`，把该变量改为 `true`，再重跑这三个 tag。
 4. 在 Cloudflare Dashboard 完成 tunnel、Published application 与 Access policy，
    将 token 写入加密 Vault，然后运行 `--tags cloudflared`。
-5. 运行 `--tags agent_runner`。第一次会在创建账号、目录和 unit 后因缺少加密凭据
-   而有意失败；按清单执行 `systemd-creds` 后重跑。手工验收 service 成功，再把
-   `nuc_agent_runner_timer_enabled` 改为 `true` 并重跑。
-6. 确认 Restic 仓库和 Vault 密码无误，运行 `--tags restic`，然后按清单立即执行
+5. 运行 `--tags agent_runner`。第一次会在创建账号、目录和 unit 后因独立 Codex OAuth
+   登录态缺失而有意失败；按清单以 `agent-runner` 身份执行
+   `codex login --device-auth` 后重跑。第一阶段的 task prompt 仍是占位，因此保持
+   `nuc_agent_runner_timer_enabled: false`，不要手工运行 service；以后有具体的
+   非确定性任务时再按清单完成“先验收 service、后启用 timer”。
+6. 用 `openssl rand -hex 32` 生成 ops Gateway token，写入已加密 Vault 的
+   `vault_nuc_ops_agent_gateway_token`，运行 `--tags ops_agent`。role 会安装精确 exec
+   approvals、policy、loopback Gateway，并依次运行 doctor 与安全审计；随后按清单以
+   `ops-agent` 身份完成 OpenAI ChatGPT/Codex device-code OAuth 登录。未登录或存在
+   非 OAuth 的 OpenAI profile 时，role 会有意失败。
+7. 确认 Restic 仓库和 Vault 密码无误，运行 `--tags restic`，然后按清单立即执行
    一次 service 与完整性检查。
 
 `nuc_codex_admin_bin_dir` 和 `nuc_tailscale_detected_ipv4` 是 play 内运行时事实，不会
@@ -148,7 +161,7 @@ Cloudflare tunnel token 与 Restic 密码只放在加密的 `vault.yml` 中；�
 
 ```text
 base → ssh_harden → srv_layout → docker → codex → tailscale → paseo
-     → cloudflared → agent_runner → restic
+     → cloudflared → agent_runner → ops_agent → restic
 ```
 
 - Paseo 监听 `0.0.0.0:6767`，relay 关闭；LAN 侧由 UFW 显式拒绝，tailnet 侧由
@@ -160,7 +173,21 @@ base → ssh_harden → srv_layout → docker → codex → tailscale → paseo
   「连接被拒绝」。
 - Docker 不把管理员或 agent-runner 加入 `docker` 组。
 - `/srv/automation` 与 `/srv/workspaces` 平级，且只由 agent-runner 拥有。
-- agent-runner 的 Codex 位于 `/usr/local/bin`，凭据只由 systemd 加密凭据加载。
+- agent-runner 的 Codex 位于 `/usr/local/bin`，只读取其独立 `CODEX_HOME` 内由人工
+  ChatGPT/Codex OAuth 登录生成的缓存；unit 不注入任何 OpenAI API key，并显式清除
+  可能由 systemd manager 继承的 OpenAI key 环境变量。
+- ops-agent 只有 `systemd-journal` 附加组，不属于 `sudo`、`docker`、`disk`。它的
+  Gateway 只绑定 loopback，token 通过仅本人可读的 `0600` file SecretRef 加载；没有 channel、webhook、
+  browser、MCP、elevated、Skill Workshop 或 Docker sandbox。OpenAI provider 使用
+  ChatGPT/Codex OAuth，但模型仍显式走 OpenClaw 原生 runtime，不隐式启用 Codex
+  plugin；认证方式与 agent runtime 是两个独立选择。主机诊断仅能命中固定路径 + 固定参数的
+  approvals，SMART 另受两条精确 sudoers 规则约束。
+- ops 的 `AGENTS.md` 与 policy 由 root/Ansible 控制，运行态只能写长期记忆、每日记忆
+  与报告。跨运行趋势由 `MEMORY.md` / `memory/*.md` 保留；私有会话 transcript 的跨对话
+  召回保持关闭，避免扩大日志与诊断内容的索引范围。OpenClaw `security audit --fix` 只负责官方确定性权限修复，不能替代上述
+  网络、工具、OS 权限边界。当前 beta 深度审计唯一被精确接受的已知 warning 及其
+  独立健康验证记录在交互清单；其他 security audit warning 和所有 critical 都会阻断部署。语法复核依据见
+  `docs/openclaw-ops-agent-security-research.md`。
 - unattended-upgrades 已启用，但自动重启保持关闭。
 
 最终验收项目和故障定位命令见 `docs/INTERACTIVE-CHECKLIST.md`。
@@ -172,21 +199,31 @@ NUC 整机丢失或重装时按以下顺序恢复。前三步都不依赖 Restic
 循环依赖。
 
 ```text
-1. 用 files/preseed.cfg 重装 Debian 13.6
-2. 在控制端 clone 本 repo
-3. 从离线副本还原 group_vars/all/local.yml、vault.yml、inventory.yml
+1. 在替代控制端 clone 本 repo
+2. 从模板重建 files/preseed.cfg：由离线 SSH 私钥导出公钥，并生成新的登录密码哈希；
+   用它重装 Debian 13.6
+3. 重新填写 local.yml / vault.yml / inventory.yml——内容可从离线凭据清单、重装后
+   实测结果、Tailscale 与 Cloudflare 后台重建，不需要额外保管这三个文件
 4. 按第 3 节分阶段跑 playbook，跨过各个人工门禁
-5. 最后用 Restic 恢复 /srv/data
+5. 最后用 Restic 恢复 /srv/data 与 ops 的 memory/reports 运行时数据
 ```
 
-第 1–4 步只需要离线保管的凭据（密码哈希、SSH 私钥、Restic 仓库地址与密码、
-Cloudflare token），把机器重新收敛到第一阶段状态；数据恢复是最后一步，此时
-`restic` role 已经配置好仓库和环境文件，可以直接：
+重建规则如下：`lan_cidr` 与 inventory 地址在新机实测；Tailscale IP 和 Access hostname
+从对应后台取得；`authorized_keys` 由离线 SSH 私钥导出公钥；Cloudflare tunnel token
+与 ops Gateway token 重新生成；Restic 仓库地址与密码来自离线清单。这样第 1–4 步只
+依赖三类离线对象，不会让被 `.gitignore` 排除的本机文件变成新的恢复前置。管理员
+Codex、agent-runner Codex 与 ops OpenClaw 的 OAuth 登录态都在第 4 步重新登录，不从
+旧机、Vault 或 Restic 恢复。数据恢复是最后一步，此时 `restic` role 已配置好仓库和
+环境文件，可以直接：
 
 ```bash
 sudo systemd-run --wait --pipe --collect \
   --property=EnvironmentFile=/etc/restic/agent-nuc.env \
-  /usr/bin/restic restore latest --target / --include /srv/data
+  /usr/bin/restic restore latest --target / \
+  --include /srv/data \
+  --include /var/lib/openclaw-ops-agent/workspace/MEMORY.md \
+  --include /var/lib/openclaw-ops-agent/workspace/memory \
+  --include /var/lib/openclaw-ops-agent/workspace/reports
 ```
 
 必须离线保管、且不只有一份的内容见 `docs/INTERACTIVE-CHECKLIST.md`：Restic 仓库

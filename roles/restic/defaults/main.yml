@@ -6,6 +6,9 @@ nuc_restic_backup_paths:
   - /srv
   - /etc/ssh
   - /etc/systemd/system
+  - /var/lib/openclaw-ops-agent/workspace/MEMORY.md
+  - /var/lib/openclaw-ops-agent/workspace/memory
+  - /var/lib/openclaw-ops-agent/workspace/reports
 nuc_restic_excludes:
   - "**/node_modules"
   - /srv/worktrees

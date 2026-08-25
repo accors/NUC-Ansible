@@ -1,0 +1,733 @@
+---
+# ops_agent —— 只读观察、跨运行文件记忆与最小 host exec 能力。
+
+- name: 保存 ops_agent 的固定内部路径
+  ansible.builtin.set_fact:
+    _ops_agent_state_dir: "{{ nuc_ops_agent_home }}/.openclaw"
+    _ops_agent_config_dir: /etc/openclaw
+    _ops_agent_config_path: /etc/openclaw/ops-agent.json
+    _ops_agent_gateway_token_path: /etc/openclaw/ops-agent-gateway-token
+    _ops_agent_exec_approvals_path: /etc/openclaw/ops-agent-exec-approvals.json
+    _ops_agent_policy_path: "{{ nuc_ops_agent_workspace }}/policy.jsonc"
+
+- name: 校验 ops_agent 的固定安全契约
+  ansible.builtin.assert:
+    that:
+      - nuc_ops_agent_user == 'ops-agent'
+      - nuc_ops_agent_home == '/home/ops-agent'
+      - nuc_ops_agent_workspace == '/var/lib/openclaw-ops-agent/workspace'
+      - nuc_ops_agent_gateway_port | int == 18789
+      - nuc_openclaw_version == '2026.8.1-beta.2'
+      - nuc_nodejs_major | int == 22
+      - nuc_nvme_device == '/dev/nvme0'
+    fail_msg: >-
+      ops_agent 的账号、隔离工作区、loopback Gateway 端口与 OpenClaw 版本属于已复核的
+      安全契约；SMART sudoers 参数固定为 /dev/nvme0。升级 OpenClaw 或更换设备节点时
+      必须先重新核对 config、approvals、policy 与 sudoers。
+
+- name: 校验 ops Gateway token 已安全填写
+  ansible.builtin.assert:
+    that:
+      - vault_nuc_ops_agent_gateway_token is defined
+      - vault_nuc_ops_agent_gateway_token | string | length >= 32
+      - vault_nuc_ops_agent_gateway_token != 'CHANGE_ME'
+    fail_msg: >-
+      请用 openssl rand -hex 32 生成独立 Gateway token，写入已加密 vault.yml 的
+      vault_nuc_ops_agent_gateway_token；不要在命令行或 Git 中传递真实 token。
+  no_log: true
+
+- name: 定义 ops 明确拒绝的工具面
+  ansible.builtin.set_fact:
+    _ops_agent_denied_tools:
+      - message
+      - sessions
+      - sessions_list
+      - sessions_history
+      - sessions_search
+      - conversations_list
+      - conversations_send
+      - conversations_turn
+      - sessions_send
+      - sessions_spawn
+      - sessions_yield
+      - subagents
+      - ask_user
+      - bundle-mcp
+      - skill_workshop
+      - edit
+      - apply_patch
+      - browser
+      - canvas
+      - gateway
+      - cron
+      - nodes
+      - computer
+
+- name: 定义 ops 的精确 exec 命令与参数白名单
+  ansible.builtin.set_fact:
+    _ops_agent_exec_allowlist:
+      - pattern: /usr/bin/systemctl
+        argPattern: '^--failed --no-pager$'
+      - pattern: /usr/bin/systemctl
+        argPattern: '^list-units --type=service --state=failed --no-pager$'
+      - pattern: /usr/bin/systemctl
+        argPattern: '^status [A-Za-z0-9@_.:-]+ --no-pager$'
+      - pattern: /usr/bin/systemctl
+        argPattern: '^(?:is-active|is-failed) [A-Za-z0-9@_.:-]+$'
+      - pattern: /usr/bin/journalctl
+        argPattern: '^--no-pager -n [0-9]{1,4}$'
+      - pattern: /usr/bin/journalctl
+        argPattern: '^--no-pager -n [0-9]{1,4} -u [A-Za-z0-9@_.:-]+$'
+      - pattern: /usr/bin/journalctl
+        argPattern: '^--no-pager -p (?:0|1|2|3|4|emerg|alert|crit|err|warning) --since (?:today|-[0-9]+(?:min|h|d))$'
+      - pattern: /usr/bin/df
+        argPattern: '^-h$'
+      - pattern: /usr/bin/free
+        argPattern: '^-h$'
+      - pattern: /usr/bin/uptime
+        argPattern: '^$'
+      - pattern: /usr/bin/ss
+        argPattern: '^-lntup$'
+      - pattern: /usr/bin/ip
+        argPattern: '^(?:-brief (?:address|link)|route show)$'
+      - pattern: /usr/bin/lsblk
+        argPattern: '^-o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINTS$'
+      - pattern: /usr/bin/findmnt
+        argPattern: '^--real --output TARGET,SOURCE,FSTYPE,OPTIONS$'
+      - pattern: /usr/bin/hostnamectl
+        argPattern: '^status$'
+      - pattern: /usr/bin/timedatectl
+        argPattern: '^status$'
+      - pattern: /usr/bin/sensors
+        argPattern: '^$'
+      - pattern: /usr/bin/sudo
+        argPattern: "^/usr/sbin/smartctl -a {{ nuc_nvme_device | regex_escape }}$"
+      - pattern: /usr/bin/sudo
+        argPattern: "^/usr/sbin/nvme smart-log {{ nuc_nvme_device | regex_escape }}$"
+
+- name: 定义导入本机 SQLite 的 exec approvals 文档
+  ansible.builtin.set_fact:
+    _ops_agent_exec_approvals_expected:
+      version: 1
+      defaults:
+        security: deny
+        ask: 'off'
+        askFallback: deny
+        autoAllowSkills: false
+      agents:
+        ops:
+          security: allowlist
+          ask: on-miss
+          askFallback: deny
+          autoAllowSkills: false
+          allowlist: "{{ _ops_agent_exec_allowlist }}"
+
+- name: 定义 OpenClaw CLI 的隔离环境
+  ansible.builtin.set_fact:
+    _ops_agent_cli_environment:
+      HOME: "{{ nuc_ops_agent_home }}"
+      PATH: /usr/local/bin:/usr/bin:/bin
+      OPENCLAW_CONFIG_PATH: "{{ _ops_agent_config_path }}"
+      OPENCLAW_STATE_DIR: "{{ _ops_agent_state_dir }}"
+      OPENCLAW_SERVICE_REPAIR_POLICY: external
+      OPENCLAW_DISABLE_BONJOUR: '1'
+      OPENAI_API_KEY: ''
+      OPENAI_ADMIN_KEY: ''
+
+- name: 安装固定 SMART sudoers 所需的 sudo
+  ansible.builtin.apt:
+    name: sudo
+    state: present
+
+- name: 探测 systemd-journal 组
+  ansible.builtin.getent:
+    database: group
+    key: systemd-journal
+    fail_key: false
+  register: _ops_agent_journal_group
+  changed_when: false
+
+- name: 要求目标机提供 systemd-journal 组
+  ansible.builtin.assert:
+    that:
+      - "'systemd-journal' in ansible_facts.getent_group"
+    fail_msg: >-
+      未找到 systemd-journal 组；ops_agent 不会用 sudo、docker 或 disk 组替代 journal
+      的只读访问能力。
+
+- name: 检查 Node.js 可执行文件
+  ansible.builtin.stat:
+    path: /usr/bin/node
+  register: _ops_agent_node_stat
+
+- name: 检查 npm 候选路径
+  ansible.builtin.stat:
+    path: "{{ _ops_agent_npm_candidate }}"
+  loop:
+    - /usr/local/bin/npm
+    - /usr/bin/npm
+  loop_control:
+    loop_var: _ops_agent_npm_candidate
+  register: _ops_agent_npm_stats
+
+- name: 选择系统 npm 路径
+  ansible.builtin.set_fact:
+    _ops_agent_npm_bin: >-
+      {{ '/usr/local/bin/npm'
+         if (_ops_agent_npm_stats.results[0].stat.exists | default(false)
+             and _ops_agent_npm_stats.results[0].stat.executable | default(false))
+         else '/usr/bin/npm'
+         if (_ops_agent_npm_stats.results[1].stat.exists | default(false)
+             and _ops_agent_npm_stats.results[1].stat.executable | default(false))
+         else '' }}
+
+- name: 要求 Paseo 阶段已安装 Node.js 与 npm
+  ansible.builtin.assert:
+    that:
+      - ansible_check_mode or _ops_agent_node_stat.stat.executable | default(false)
+      - ansible_check_mode or _ops_agent_npm_bin | length > 0
+    fail_msg: >-
+      ops_agent 依赖 paseo role 安装的 Node.js 22 与 npm；请先运行
+      --tags codex,tailscale,paseo，再重跑 ops_agent。
+
+- name: 读取 Node.js 实际版本
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/node
+      - --version
+  register: _ops_agent_node_version
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: 校验 Node.js 满足 OpenClaw 22.x 最低版本
+  ansible.builtin.assert:
+    that:
+      - >-
+        (_ops_agent_node_version.stdout | regex_replace('^v', ''))
+        is version('22.22.3', '>=')
+      - >-
+        (_ops_agent_node_version.stdout | regex_replace('^v', ''))
+        is version('23.0.0', '<')
+    fail_msg: >-
+      OpenClaw {{ nuc_openclaw_version }} 在 Node.js 22 通道要求 >=22.22.3 且 <23；
+      请先升级 NodeSource 22.x 包。
+  when: not ansible_check_mode
+
+- name: 安装经复核版本的 OpenClaw
+  community.general.npm:
+    name: openclaw
+    version: "{{ nuc_openclaw_version }}"
+    global: true
+    path: /usr/local
+    state: present
+    executable: "{{ _ops_agent_npm_bin }}"
+  environment:
+    PATH: /usr/local/bin:/usr/bin:/bin
+    NPM_CONFIG_PREFIX: /usr/local
+  when:
+    - not ansible_check_mode
+    - _ops_agent_npm_bin | length > 0
+
+- name: 检查 OpenClaw 可执行文件
+  ansible.builtin.stat:
+    path: /usr/local/bin/openclaw
+  register: _ops_agent_openclaw_stat
+
+- name: 确认 OpenClaw 已安装到固定系统路径
+  ansible.builtin.assert:
+    that:
+      - ansible_check_mode or _ops_agent_openclaw_stat.stat.exists
+      - ansible_check_mode or _ops_agent_openclaw_stat.stat.isreg
+      - ansible_check_mode or _ops_agent_openclaw_stat.stat.executable
+    fail_msg: >-
+      未找到可执行的 /usr/local/bin/openclaw；请检查 openclaw@{{ nuc_openclaw_version }}
+      的全局 npm 安装结果。
+
+- name: 创建独立无密码 ops 账号并精确设置附加组
+  ansible.builtin.user:
+    name: "{{ nuc_ops_agent_user }}"
+    home: "{{ nuc_ops_agent_home }}"
+    create_home: true
+    system: false
+    shell: /bin/bash
+    password: '!'
+    password_lock: true
+    update_password: always
+    groups:
+      - systemd-journal
+    append: false
+  no_log: true
+
+- name: 固定 ops home 为仅本人可访问
+  ansible.builtin.file:
+    path: "{{ nuc_ops_agent_home }}"
+    state: directory
+    owner: "{{ nuc_ops_agent_user }}"
+    group: "{{ nuc_ops_agent_user }}"
+    mode: '0700'
+
+- name: 读取 ops 账号实际组成员关系
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/id
+      - -Gn
+      - "{{ nuc_ops_agent_user }}"
+  register: _ops_agent_groups
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: 断言 ops 只有主组与 systemd-journal 附加组
+  ansible.builtin.assert:
+    that:
+      - nuc_ops_agent_user in (_ops_agent_groups.stdout | trim).split()
+      - "'systemd-journal' in (_ops_agent_groups.stdout | trim).split()"
+      - >-
+        ((_ops_agent_groups.stdout | trim).split()
+         | difference([nuc_ops_agent_user, 'systemd-journal'])
+         | length) == 0
+      - "'sudo' not in (_ops_agent_groups.stdout | trim).split()"
+      - "'docker' not in (_ops_agent_groups.stdout | trim).split()"
+      - "'disk' not in (_ops_agent_groups.stdout | trim).split()"
+    fail_msg: >-
+      ops-agent 只能属于自己的主组与 systemd-journal；不得属于 sudo、docker、disk
+      或任何其他附加组。
+  when: not ansible_check_mode
+
+- name: 创建 root 控制的 ops 配置与工作区骨架
+  ansible.builtin.file:
+    path: "{{ _ops_agent_root_directory.path }}"
+    state: directory
+    owner: root
+    group: "{{ nuc_ops_agent_user }}"
+    mode: "{{ _ops_agent_root_directory.mode }}"
+  loop:
+    - path: "{{ _ops_agent_config_dir }}"
+      mode: '0750'
+    - path: "{{ nuc_ops_agent_workspace | dirname }}"
+      mode: '0750'
+    - path: "{{ nuc_ops_agent_workspace }}"
+      mode: '0750'
+  loop_control:
+    loop_var: _ops_agent_root_directory
+    label: "{{ _ops_agent_root_directory.path }}"
+
+- name: 创建 ops 私有 state 目录
+  ansible.builtin.file:
+    path: "{{ _ops_agent_state_dir }}"
+    state: directory
+    owner: "{{ nuc_ops_agent_user }}"
+    group: "{{ nuc_ops_agent_user }}"
+    mode: '0700'
+
+- name: 创建 ops 可写的记忆与报告目录
+  ansible.builtin.file:
+    path: "{{ _ops_agent_runtime_directory }}"
+    state: directory
+    owner: "{{ nuc_ops_agent_user }}"
+    group: "{{ nuc_ops_agent_user }}"
+    mode: '0700'
+  loop:
+    - "{{ nuc_ops_agent_workspace }}/memory"
+    - "{{ nuc_ops_agent_workspace }}/reports"
+  loop_control:
+    loop_var: _ops_agent_runtime_directory
+
+- name: 首次创建长期记忆文件但不覆盖运行时内容
+  ansible.builtin.copy:
+    content: |-
+      # ops 长期记忆
+
+      只记录跨日仍有价值的系统趋势、已确认异常和运维决策。
+    dest: "{{ nuc_ops_agent_workspace }}/MEMORY.md"
+    owner: "{{ nuc_ops_agent_user }}"
+    group: "{{ nuc_ops_agent_user }}"
+    mode: '0600'
+    force: false
+
+- name: 安装 root 控制的 ops 启动指令
+  ansible.builtin.template:
+    src: openclaw-ops-agent-AGENTS.md.j2
+    dest: "{{ nuc_ops_agent_workspace }}/AGENTS.md"
+    owner: root
+    group: "{{ nuc_ops_agent_user }}"
+    mode: '0640'
+
+- name: 安装 root 控制的 OpenClaw policy
+  ansible.builtin.template:
+    src: openclaw-ops-agent-policy.jsonc.j2
+    dest: "{{ _ops_agent_policy_path }}"
+    owner: root
+    group: "{{ nuc_ops_agent_user }}"
+    mode: '0640'
+  notify: "ops_agent | restart gateway"
+
+- name: 写入独立 Gateway token 文件
+  ansible.builtin.copy:
+    content: "{{ vault_nuc_ops_agent_gateway_token }}\n"
+    dest: "{{ _ops_agent_gateway_token_path }}"
+    owner: "{{ nuc_ops_agent_user }}"
+    group: "{{ nuc_ops_agent_user }}"
+    mode: '0600'
+  no_log: true
+  notify: "ops_agent | restart gateway"
+
+- name: 安装参数固定的 NVMe SMART sudoers
+  ansible.builtin.template:
+    src: ops-agent-sudoers.j2
+    dest: /etc/sudoers.d/90-ops-agent-smart
+    owner: root
+    group: root
+    mode: '0440'
+    validate: /usr/sbin/visudo -cf %s
+
+- name: 安装待导入的 exec approvals 文档
+  ansible.builtin.template:
+    src: openclaw-ops-agent-exec-approvals.json.j2
+    dest: "{{ _ops_agent_exec_approvals_path }}"
+    owner: root
+    group: "{{ nuc_ops_agent_user }}"
+    mode: '0640'
+
+- name: 安装 Ansible 管理的 OpenClaw ops 配置
+  ansible.builtin.template:
+    src: openclaw-ops-agent.json.j2
+    dest: "{{ _ops_agent_config_path }}"
+    owner: "{{ nuc_ops_agent_user }}"
+    group: "{{ nuc_ops_agent_user }}"
+    mode: '0600'
+  notify: "ops_agent | restart gateway"
+
+- name: 安装 system-level OpenClaw ops Gateway unit
+  ansible.builtin.template:
+    src: openclaw-ops-agent.service.j2
+    dest: /etc/systemd/system/openclaw-ops-agent.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify:
+    - "ops_agent | daemon-reload system units"
+    - "ops_agent | restart gateway"
+
+- name: 验证 OpenClaw 配置与 SecretRef
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/openclaw
+      - config
+      - validate
+      - --json
+  become: true
+  become_user: "{{ nuc_ops_agent_user }}"
+  environment: "{{ _ops_agent_cli_environment }}"
+  register: _ops_agent_config_validation
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: 读取当前本机 exec approvals
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/openclaw
+      - approvals
+      - get
+      - --json
+  become: true
+  become_user: "{{ nuc_ops_agent_user }}"
+  environment: "{{ _ops_agent_cli_environment }}"
+  register: _ops_agent_approvals_read
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode
+
+- name: 解析当前 exec approvals 文档
+  ansible.builtin.set_fact:
+    _ops_agent_current_approvals: >-
+      {{ (_ops_agent_approvals_read.stdout | from_json)
+         if (_ops_agent_approvals_read.rc == 0)
+         else {} }}
+  when: not ansible_check_mode
+
+- name: 提取当前 approvals 的受控字段
+  ansible.builtin.set_fact:
+    _ops_agent_current_approvals_file: >-
+      {{ _ops_agent_current_approvals.get('file', {}) }}
+    _ops_agent_current_allowlist: []
+  when: not ansible_check_mode
+
+- name: 归一化当前 approvals 白名单并忽略使用时间元数据
+  ansible.builtin.set_fact:
+    _ops_agent_current_allowlist: >-
+      {{ _ops_agent_current_allowlist
+         + [{'pattern': _ops_agent_current_rule.pattern,
+             'argPattern': _ops_agent_current_rule.argPattern | default('')}] }}
+  loop: >-
+    {{ _ops_agent_current_approvals_file.get('agents', {})
+       .get('ops', {}).get('allowlist', []) }}
+  loop_control:
+    loop_var: _ops_agent_current_rule
+    label: "{{ _ops_agent_current_rule.pattern | default('格式无效') }}"
+  when: not ansible_check_mode
+
+- name: 计算 exec approvals 是否漂移
+  ansible.builtin.set_fact:
+    _ops_agent_approvals_drifted: >-
+      {{ _ops_agent_approvals_read.rc != 0
+         or (_ops_agent_current_approvals_file.get('version', 0) | int) != 1
+         or _ops_agent_current_approvals_file.get('defaults', {})
+            != _ops_agent_exec_approvals_expected.defaults
+         or (_ops_agent_current_approvals_file.get('agents', {}).keys() | list | sort)
+            != ['ops']
+         or _ops_agent_current_approvals_file.get('agents', {}).get('ops', {})
+            .get('security', '') != 'allowlist'
+         or _ops_agent_current_approvals_file.get('agents', {}).get('ops', {})
+            .get('ask', '') != 'on-miss'
+         or _ops_agent_current_approvals_file.get('agents', {}).get('ops', {})
+            .get('askFallback', '') != 'deny'
+         or _ops_agent_current_approvals_file.get('agents', {}).get('ops', {})
+            .get('autoAllowSkills', true) | bool
+         or _ops_agent_current_allowlist != _ops_agent_exec_allowlist }}
+  when: not ansible_check_mode
+
+- name: 仅在漂移时导入精确 exec approvals
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/openclaw
+      - approvals
+      - set
+      - --file
+      - "{{ _ops_agent_exec_approvals_path }}"
+  become: true
+  become_user: "{{ nuc_ops_agent_user }}"
+  environment: "{{ _ops_agent_cli_environment }}"
+  changed_when: true
+  when:
+    - not ansible_check_mode
+    - _ops_agent_approvals_drifted | bool
+
+- name: 读取配置与 host approvals 合并后的 exec 策略
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/openclaw
+      - exec-policy
+      - show
+      - --json
+  become: true
+  become_user: "{{ nuc_ops_agent_user }}"
+  environment: "{{ _ops_agent_cli_environment }}"
+  register: _ops_agent_exec_policy_show
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: 断言 ops 的最终 exec 策略没有被任一层放宽
+  ansible.builtin.assert:
+    that:
+      - >-
+        ((_ops_agent_exec_policy_show.stdout | from_json).effectivePolicy.scopes
+         | length) == 1
+      - >-
+        ((_ops_agent_exec_policy_show.stdout | from_json).effectivePolicy.scopes[0]
+         .host.requested | default('')) == 'gateway'
+      - >-
+        ((_ops_agent_exec_policy_show.stdout | from_json).effectivePolicy.scopes[0]
+         .mode.effective | default('')) == 'ask'
+      - >-
+        ((_ops_agent_exec_policy_show.stdout | from_json).effectivePolicy.scopes[0]
+         .security.effective | default('')) == 'allowlist'
+      - >-
+        ((_ops_agent_exec_policy_show.stdout | from_json).effectivePolicy.scopes[0]
+         .ask.effective | default('')) == 'on-miss'
+      - >-
+        ((_ops_agent_exec_policy_show.stdout | from_json).effectivePolicy.scopes[0]
+         .askFallback.effective | default('')) == 'deny'
+      - >-
+        ((_ops_agent_exec_policy_show.stdout | from_json).effectivePolicy.scopes[0]
+         .runtimeApprovalsSource | default('')) == 'local-file'
+    fail_msg: >-
+      tools.exec 请求配置与 SQLite host approvals 的最终交集不是
+      gateway / ask / allowlist / on-miss / deny；ops_agent 拒绝继续。
+  when: not ansible_check_mode
+
+- name: 验证 OpenClaw policy 与 approvals 证据
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/openclaw
+      - policy
+      - check
+      - --agent
+      - ops
+      - --json
+  become: true
+  become_user: "{{ nuc_ops_agent_user }}"
+  environment: "{{ _ops_agent_cli_environment }}"
+  register: _ops_agent_policy_check
+  changed_when: false
+  when: not ansible_check_mode
+
+# 配置、unit、token 与 policy 都通过静态验证后，才让新进程接管 Gateway。
+- name: 刷新 ops Gateway handlers
+  ansible.builtin.meta: flush_handlers
+
+- name: 确保 ops Gateway 已启用并运行
+  ansible.builtin.systemd_service:
+    name: openclaw-ops-agent.service
+    enabled: true
+    state: started
+  when: not ansible_check_mode
+
+- name: 执行 OpenClaw 官方确定性安全修复
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/openclaw
+      - security
+      - audit
+      - --fix
+      - --json
+  become: true
+  become_user: "{{ nuc_ops_agent_user }}"
+  environment: "{{ _ops_agent_cli_environment }}"
+  register: _ops_agent_security_fix
+  changed_when: >-
+    ((_ops_agent_security_fix.stdout | from_json).fix.changes | default([]) | length > 0)
+    or
+    (((_ops_agent_security_fix.stdout | from_json).fix.actions | default([])
+      | selectattr('ok', 'equalto', true) | list | length) > 0)
+  when: not ansible_check_mode
+
+- name: 运行只读 doctor 部署门禁
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/openclaw
+      - doctor
+      - --lint
+      - --severity-min
+      - error
+      - --json
+  become: true
+  become_user: "{{ nuc_ops_agent_user }}"
+  environment: "{{ _ops_agent_cli_environment }}"
+  register: _ops_agent_doctor_lint
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: 复核运行态安全审计
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/openclaw
+      - security
+      - audit
+      - --json
+  become: true
+  become_user: "{{ nuc_ops_agent_user }}"
+  environment: "{{ _ops_agent_cli_environment }}"
+  register: _ops_agent_security_audit
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: 执行含插件扫描与 Gateway 探测的深度审计
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/openclaw
+      - security
+      - audit
+      - --deep
+      - --json
+  become: true
+  become_user: "{{ nuc_ops_agent_user }}"
+  environment: "{{ _ops_agent_cli_environment }}"
+  register: _ops_agent_security_audit_deep
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: 提取普通与深度审计的 warning
+  ansible.builtin.set_fact:
+    _ops_agent_security_audit_warnings: >-
+      {{ (_ops_agent_security_audit.stdout | from_json).findings
+         | selectattr('severity', 'equalto', 'warn') | list }}
+    _ops_agent_security_audit_deep_warnings: >-
+      {{ (_ops_agent_security_audit_deep.stdout | from_json).findings
+         | selectattr('severity', 'equalto', 'warn') | list }}
+  when: not ansible_check_mode
+
+- name: 拒绝未明确复核的 OpenClaw 安全发现
+  ansible.builtin.assert:
+    that:
+      - >-
+        ((_ops_agent_security_audit.stdout | from_json).summary.critical
+         | default(0) | int) == 0
+      - _ops_agent_security_audit_warnings | length == 0
+      - >-
+        ((_ops_agent_security_audit_deep.stdout | from_json).summary.critical
+         | default(0) | int) == 0
+      - _ops_agent_security_audit_deep_warnings | length <= 1
+      - >-
+        (_ops_agent_security_audit_deep_warnings | length == 0)
+        or
+        ((_ops_agent_security_audit_deep_warnings[0].checkId | default(''))
+         == 'gateway.probe_failed'
+         and
+         (_ops_agent_security_audit_deep_warnings[0].detail | default(''))
+         == 'missing scope: operator.read')
+    fail_msg: >-
+      OpenClaw security audit 仍有 critical 或未复核的 warning finding；请查看上述 JSON
+      的 checkId 后修复。唯一暂时接受的 warning 是 2026.8.1-beta.2 在无设备身份的
+      loopback probe 上产生的 gateway.probe_failed / missing scope: operator.read；role
+      已另用 health 验证 Gateway，且升级后该 warning 消失也会通过。
+  when: not ansible_check_mode
+
+- name: 验证 loopback Gateway 健康状态
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/openclaw
+      - health
+      - --json
+  become: true
+  become_user: "{{ nuc_ops_agent_user }}"
+  environment: "{{ _ops_agent_cli_environment }}"
+  register: _ops_agent_health
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: 只读列出 ops 的 OpenAI 认证资料
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/openclaw
+      - models
+      - auth
+      - list
+      - --provider
+      - openai
+      - --agent
+      - ops
+      - --json
+  become: true
+  become_user: "{{ nuc_ops_agent_user }}"
+  environment: "{{ _ops_agent_cli_environment }}"
+  register: _ops_agent_openai_auth_list
+  changed_when: false
+  failed_when: false
+  no_log: true
+  when: not ansible_check_mode
+
+- name: 提取 ops 的 OpenAI 认证资料类型
+  ansible.builtin.set_fact:
+    _ops_agent_openai_auth_profiles: >-
+      {{ (_ops_agent_openai_auth_list.stdout | from_json).profiles }}
+  no_log: true
+  when:
+    - not ansible_check_mode
+    - (_ops_agent_openai_auth_list.rc | default(1) | int) == 0
+
+- name: 要求 ops 仅使用 ChatGPT Codex OAuth
+  ansible.builtin.fail:
+    msg: >-
+      ops 基础设施、安全审计与 Gateway 已就绪，但 ops 尚无 OpenAI OAuth profile，
+      或存在非 OAuth 的 OpenAI profile。请按交互清单以 ops-agent 身份运行
+      openclaw models auth login --provider openai --method device-code --agent ops；不要选择
+      API key。完成后重跑 ops_agent tag。Ansible 不代替交互式登录、不复制或备份登录态，
+      也不会配置任何 channel。
+  when: >-
+    not ansible_check_mode and
+    (
+      (_ops_agent_openai_auth_list.rc | default(1) | int) != 0 or
+      (_ops_agent_openai_auth_profiles | default([]) | length) == 0 or
+      ((_ops_agent_openai_auth_profiles | default([])
+        | map(attribute='type') | unique | list) != ['oauth'])
+    )

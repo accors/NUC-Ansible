@@ -1,0 +1,55 @@
+{
+  "network": {
+    "privateNetwork": { "allow": false }
+  },
+  "gateway": {
+    "exposure": {
+      "allowNonLoopbackBind": false,
+      "allowTailscaleFunnel": false
+    },
+    "auth": {
+      "requireAuth": true,
+      "requireExplicitRateLimit": true
+    },
+    "controlUi": { "allowInsecure": false },
+    "remote": { "allow": false },
+    "http": {
+      "denyEndpoints": ["chatCompletions", "responses"],
+      "requireUrlAllowlists": true
+    },
+    "nodes": { "denyCommands": ["system.run"] }
+  },
+  "dataHandling": {
+    "sensitiveLogging": { "requireRedaction": true },
+    "telemetry": { "denyContentCapture": true },
+    "memory": { "denySessionTranscriptIndexing": true }
+  },
+  "secrets": {
+    "requireManagedProviders": true,
+    "denySources": ["env", "exec", "store"],
+    "allowInsecureProviders": false
+  },
+  "execApprovals": {
+    "requireFile": true,
+    "defaults": { "allowSecurity": ["deny"] },
+    "agents": {
+      "allowSecurity": ["deny", "allowlist"],
+      "allowAutoAllowSkills": false,
+      "allowlist": {
+        "expected": {{ _ops_agent_exec_allowlist | to_nice_json(indent=8) | indent(8, first=false) }}
+      }
+    }
+  },
+  "tools": {
+    "profiles": { "allow": ["messaging"] },
+    "fs": { "requireWorkspaceOnly": true },
+    "exec": {
+      "allowHosts": ["gateway"]
+    },
+    "elevated": { "allow": false },
+    "alsoAllow": {
+      "expected": ["read", "write", "memory_search", "memory_get", "exec", "process"]
+    },
+    "denyTools": {{ _ops_agent_denied_tools | to_nice_json(indent=4) | indent(4, first=false) }}
+  }
+}

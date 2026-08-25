@@ -10,7 +10,8 @@
 nuc_admin_user: CHANGE_ME
 
 # 管理员登录公钥，至少一把，整行照抄 .pub 文件内容。
-# ssh_harden 以 exclusive: true 写入，未列出的公钥会被移除。
+# ssh_harden 以 exclusive: true 写入。若未列出的现有公钥将被移除，role 会先停止，
+# 只有显式传入 -e nuc_confirm_key_removal=true 才会继续。
 nuc_admin_authorized_keys:
   - "ssh-ed25519 CHANGE_ME_REPLACE_WITH_REAL_PUBLIC_KEY CHANGE_ME"
 

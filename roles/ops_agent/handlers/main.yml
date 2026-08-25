@@ -1,0 +1,12 @@
+---
+- name: "ops_agent | daemon-reload system units"
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: not ansible_check_mode
+
+- name: "ops_agent | restart gateway"
+  ansible.builtin.systemd_service:
+    name: openclaw-ops-agent.service
+    enabled: true
+    state: restarted
+  when: not ansible_check_mode

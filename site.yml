@@ -33,6 +33,9 @@
     - role: agent_runner
       tags:
         - agent_runner
+    - role: ops_agent
+      tags:
+        - ops_agent
     - role: restic
       tags:
         - restic

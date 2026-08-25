@@ -121,6 +121,7 @@ nuc_sshd_hardening_options:
   PasswordAuthentication: "no"
   KbdInteractiveAuthentication: "no"
   X11Forwarding: "no"
+nuc_confirm_key_removal: false
 
 nuc_docker_package_versions:
   docker-ce: ""
@@ -150,11 +151,16 @@ nuc_paseo_password_configured: false
 nuc_cloudflared_package_version: ""
 nuc_cloudflared_enable_service: true
 
-nuc_agent_runner_credential_path: /etc/credstore.encrypted/agent-codex-api-key
 nuc_agent_runner_task_prompt: 执行每日自动化任务，并把结果写入 reports/
 nuc_agent_runner_schedule: "*-*-* 07:30:00 Australia/Melbourne"
 nuc_agent_runner_randomized_delay: 10m
 nuc_agent_runner_timer_enabled: false
+
+nuc_ops_agent_user: ops-agent
+nuc_ops_agent_home: /home/ops-agent
+nuc_ops_agent_workspace: /var/lib/openclaw-ops-agent/workspace
+nuc_ops_agent_gateway_port: 18789
+nuc_openclaw_version: 2026.8.1-beta.2
 
 nuc_restic_package_version: ""
 # nuc_restic_repository 是环境相关值，由 local.yml 提供（见本文件顶部说明）。
@@ -162,6 +168,9 @@ nuc_restic_backup_paths:
   - /srv
   - /etc/ssh
   - /etc/systemd/system
+  - /var/lib/openclaw-ops-agent/workspace/MEMORY.md
+  - /var/lib/openclaw-ops-agent/workspace/memory
+  - /var/lib/openclaw-ops-agent/workspace/reports
 nuc_restic_excludes:
   - "**/node_modules"
   - /srv/worktrees

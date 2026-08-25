@@ -1,4 +1,14 @@
 ---
+- name: 要求 Paseo 与产生运行时事实的上游 tags 同跑
+  ansible.builtin.assert:
+    that:
+      - nuc_codex_admin_bin | default('') | trim | length > 0
+      - nuc_codex_admin_bin_dir | default('') | trim | length > 0
+      - nuc_tailscale_detected_ipv4 | default('') | trim | length > 0
+    fail_msg: >-
+      paseo 依赖本次 play 中由 codex 与 tailscale role 产生的运行时事实；不能只运行
+      --tags paseo。请使用 --tags codex,tailscale,paseo 重跑。
+
 - name: 探测管理员的 passwd 条目
   ansible.builtin.getent:
     database: passwd

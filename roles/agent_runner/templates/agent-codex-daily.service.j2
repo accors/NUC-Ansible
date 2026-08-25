@@ -1,4 +1,4 @@
-{# agent-runner 的 system-level Codex service；凭据由 systemd-creds 提供。 #}
+{# agent-runner 的 system-level Codex service；认证来自独立 CODEX_HOME 的 OAuth 登录态。 #}
 [Unit]
 Description=Daily Codex automation
 After=network-online.target
@@ -12,8 +12,8 @@ WorkingDirectory={{ nuc_agent_runner_workdir }}
 Environment=HOME={{ nuc_agent_runner_home }}
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
 Environment=CODEX_HOME={{ nuc_agent_runner_codex_home }}
-LoadCredentialEncrypted=OPENAI_API_KEY:{{ nuc_agent_runner_credential_path | basename }}
-ExecStart=/bin/sh -c 'export OPENAI_API_KEY="$(cat "$CREDENTIALS_DIRECTORY/OPENAI_API_KEY")"; exec /usr/local/bin/codex exec --sandbox workspace-write --ask-for-approval never "{{ nuc_agent_runner_task_prompt }}"'
+UnsetEnvironment=OPENAI_API_KEY OPENAI_ADMIN_KEY
+ExecStart=/usr/local/bin/codex exec --sandbox workspace-write --ask-for-approval never "{{ nuc_agent_runner_task_prompt }}"
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict

@@ -1,0 +1,48 @@
+[Unit]
+Description=OpenClaw ops observer gateway
+After=network-online.target
+Wants=network-online.target
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+[Service]
+Type=simple
+User={{ nuc_ops_agent_user }}
+Group={{ nuc_ops_agent_user }}
+WorkingDirectory={{ nuc_ops_agent_workspace }}
+Environment=HOME={{ nuc_ops_agent_home }}
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=OPENCLAW_CONFIG_PATH={{ _ops_agent_config_path }}
+Environment=OPENCLAW_STATE_DIR={{ _ops_agent_state_dir }}
+Environment=OPENCLAW_SERVICE_REPAIR_POLICY=external
+Environment=OPENCLAW_DISABLE_BONJOUR=1
+UnsetEnvironment=OPENAI_API_KEY OPENAI_ADMIN_KEY
+ExecStart=/usr/local/bin/openclaw gateway --port {{ nuc_ops_agent_gateway_port }}
+Restart=always
+RestartSec=5
+RestartPreventExitStatus=78
+TimeoutStopSec=30
+TimeoutStartSec=30
+SuccessExitStatus=0 143
+OOMPolicy=continue
+KillMode=control-group
+UMask=0077
+
+# 配置与启动指令由 root/Ansible 控制；运行时只能写 state、memory 与 reports。
+ProtectSystem=strict
+ProtectHome=read-only
+ReadOnlyPaths={{ _ops_agent_config_dir }} {{ nuc_ops_agent_workspace }}/AGENTS.md {{ _ops_agent_policy_path }}
+ReadWritePaths={{ _ops_agent_state_dir }} {{ nuc_ops_agent_workspace }}/MEMORY.md {{ nuc_ops_agent_workspace }}/memory {{ nuc_ops_agent_workspace }}/reports
+InaccessiblePaths=-/run/docker.sock -/var/run/docker.sock
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+
+# 不设置 NoNewPrivileges/PrivateDevices：精确 sudoers 规则需要 setuid sudo，
+# smartctl/nvme 也必须看到固定的 {{ nuc_nvme_device }} 设备节点。
+
+[Install]
+WantedBy=multi-user.target

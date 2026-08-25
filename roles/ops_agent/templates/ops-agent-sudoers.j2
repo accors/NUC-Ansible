@@ -1,0 +1,4 @@
+# 仅允许读取固定 NVMe 设备的健康信息；命令和参数不得放宽或使用通配符。
+{{ nuc_ops_agent_user }} ALL=(root) NOPASSWD: /usr/sbin/smartctl -a {{ nuc_nvme_device }}
+{{ nuc_ops_agent_user }} ALL=(root) NOPASSWD: /usr/sbin/nvme smart-log {{ nuc_nvme_device }}
+

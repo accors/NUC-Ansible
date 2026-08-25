@@ -1,0 +1,139 @@
+{
+  "agents": {
+    "ownership": "explicit",
+    "defaults": {
+      "workspace": {{ nuc_ops_agent_workspace | to_json }},
+      "skipBootstrap": true,
+      "skills": [],
+      "heartbeat": { "every": "0m" },
+      "model": { "primary": "openai/gpt-5.6-sol" },
+      "models": {
+        "openai/gpt-5.6-sol": {
+          "agentRuntime": { "id": "openclaw" }
+        }
+      },
+      "sandbox": { "mode": "off" }
+    },
+    "entries": {
+      "ops": {
+        "workspace": {{ nuc_ops_agent_workspace | to_json }},
+        "skills": [],
+        "memory": {
+          "search": {
+            "enabled": true,
+            // 跨运行记忆来自 MEMORY.md / memory/*.md；关闭私有会话 transcript 跨对话召回。
+            "rememberAcrossConversations": false,
+            "sources": ["memory"]
+          }
+        }
+      }
+    }
+  },
+  "skills": {
+    "workshop": {
+      "autonomous": { "mode": "off" },
+      "allowSymlinkTargetWrites": false,
+      "approvalPolicy": "pending"
+    }
+  },
+  "tools": {
+    "profile": "messaging",
+    "alsoAllow": ["read", "write", "memory_search", "memory_get", "exec", "process"],
+    "deny": {{ _ops_agent_denied_tools | to_nice_json(indent=4) | indent(4, first=false) }},
+    "codeMode": { "enabled": false },
+    "agentToAgent": { "enabled": false },
+    "sessions": { "visibility": "self" },
+    "fs": { "workspaceOnly": true },
+    "exec": {
+      "host": "gateway",
+      "mode": "ask",
+      "strictInlineEval": true,
+      "safeBins": [],
+      "timeoutSeconds": 60,
+      "notifyOnExit": false
+    },
+    "elevated": { "enabled": false }
+  },
+  "secrets": {
+    "providers": {
+      "ops_gateway_token": {
+        "source": "file",
+        "path": {{ _ops_agent_gateway_token_path | to_json }},
+        "mode": "singleValue"
+      }
+    }
+  },
+  "gateway": {
+    "port": {{ nuc_ops_agent_gateway_port }},
+    "mode": "local",
+    "bind": "loopback",
+    "controlUi": {
+      "enabled": false,
+      "dangerouslyDisableDeviceAuth": false,
+      "dangerouslyAllowHostHeaderOriginFallback": false
+    },
+    "cliAgents": { "enabled": false },
+    "terminal": { "enabled": false },
+    "auth": {
+      "mode": "token",
+      "token": {
+        "source": "file",
+        "provider": "ops_gateway_token",
+        "id": "value"
+      },
+      "allowTailscale": false,
+      "rateLimit": {
+        "maxAttempts": 5,
+        "windowMs": 60000,
+        "lockoutMs": 300000,
+        "exemptLoopback": false
+      }
+    },
+    "allowRealIpFallback": false,
+    "tools": { "deny": ["*"] },
+    "tailscale": { "mode": "off" },
+    "remote": {},
+    "reload": { "mode": "off" },
+    "http": {
+      "endpoints": {
+        "chatCompletions": { "enabled": false },
+        "responses": {
+          "enabled": false,
+          "files": { "allowUrl": false },
+          "images": { "allowUrl": false }
+        }
+      }
+    },
+    "nodes": {
+      "browser": { "mode": "off" },
+      "pairing": {
+        "autoApproveLocal": false,
+        "sshVerify": false
+      },
+      "pluginTools": { "enabled": false },
+      "allowSkills": false,
+      "commands": { "deny": ["system.run"] }
+    }
+  },
+  "discovery": { "mdns": { "mode": "off" } },
+  "plugins": {
+    "enabled": true,
+    "allow": ["openai", "memory-core", "policy"],
+    "slots": { "memory": "memory-core" },
+    "entries": {
+      "openai": { "enabled": true },
+      "memory-core": {
+        "enabled": true,
+        "config": { "dreaming": { "enabled": false } }
+      },
+      "policy": {
+        "enabled": true,
+        "config": {
+          "enabled": true,
+          "path": "policy.jsonc",
+          "workspaceRepairs": false
+        }
+      }
+    }
+  }
+}

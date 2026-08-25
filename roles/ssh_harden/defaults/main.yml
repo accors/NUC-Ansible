@@ -2,6 +2,7 @@
 # ssh_harden 只重述共享契约中本 role 使用的变量。
 nuc_admin_user: CHANGE_ME
 nuc_admin_authorized_keys: []
+nuc_confirm_key_removal: false
 
 nuc_sshd_hardening_options:
   PermitRootLogin: "no"
