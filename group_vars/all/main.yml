@@ -152,6 +152,10 @@ nuc_cloudflared_package_version: ""
 nuc_cloudflared_enable_service: true
 
 nuc_agent_runner_task_prompt: 执行每日自动化任务，并把结果写入 reports/
+# prompt 渲染到 /etc 下的只读文件，由 StandardInput 送进 codex exec。
+# 不放 agent-runner 的 home：那里在 ReadWritePaths 之内，agent 能改写自己的指令。
+nuc_agent_runner_config_dir: /etc/agent-runner
+nuc_agent_runner_prompt_path: /etc/agent-runner/task-prompt.txt
 nuc_agent_runner_schedule: "*-*-* 07:30:00 Australia/Melbourne"
 nuc_agent_runner_randomized_delay: 10m
 nuc_agent_runner_timer_enabled: false

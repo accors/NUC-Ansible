@@ -7,6 +7,10 @@ nuc_agent_runner_workdir: /srv/automation
 nuc_agent_runner_codex_home: /var/lib/agent-runner/codex
 nuc_codex_system_version: latest
 nuc_agent_runner_task_prompt: 执行每日自动化任务，并把结果写入 reports/
+# prompt 落在 /etc 下而不是 agent-runner 的 home：home 在 ReadWritePaths 之内，
+# 放那里 agent 能改写自己的任务指令。/etc 在 ProtectSystem=strict 下只读。
+nuc_agent_runner_config_dir: /etc/agent-runner
+nuc_agent_runner_prompt_path: /etc/agent-runner/task-prompt.txt
 nuc_agent_runner_schedule: "*-*-* 07:30:00 Australia/Melbourne"
 nuc_agent_runner_randomized_delay: 10m
 nuc_agent_runner_timer_enabled: false

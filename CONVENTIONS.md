@@ -85,6 +85,8 @@ PDF v1.4 只明确固定 Debian 13.6 与 Node.js 22 LTS。其余软件没有给�
 | 变量 | 类型 | 默认值 | 来源 | 说明 |
 |---|---|---|---|---|
 | `nuc_agent_runner_task_prompt` | string | `执行每日自动化任务，并把结果写入 reports/` | 11.3 | 第一阶段占位文案；必须替换成具体任务后才允许启用 timer |
+| `nuc_agent_runner_config_dir` | path | `/etc/agent-runner` | 任务补充 | `root:agent-runner 0750`；位于 `ReadWritePaths` 之外 |
+| `nuc_agent_runner_prompt_path` | path | `/etc/agent-runner/task-prompt.txt` | 任务补充 | `root:agent-runner 0640`；经 `StandardInput=file:` 送入 `codex exec -` |
 | `nuc_agent_runner_schedule` | string | `*-*-* 07:30:00 Australia/Melbourne` | 11.3 | systemd timer `OnCalendar` |
 | `nuc_agent_runner_randomized_delay` | string | `10m` | 11.3 | timer 随机延迟 |
 | `nuc_agent_runner_timer_enabled` | boolean | `false` | 11.3 | 第一阶段保持 `false`；只有具体 prompt 经人工 service 验收后才改为 `true` |
@@ -246,6 +248,9 @@ role tag 与目录名完全相同，`site.yml` 只按下列顺序表达依赖，
   `/srv/automation` 与 `/var/lib/agent-runner`。认证只允许独立 `CODEX_HOME` 中人工生成的
   ChatGPT/Codex OAuth 登录态；unit 不得注入 key，并必须用 `UnsetEnvironment` 清除
   `OPENAI_API_KEY` 与 `OPENAI_ADMIN_KEY`。
+- agent-runner 的 `codex` 命令行有三处不可整段挪动的约束：`--ask-for-approval` 是**全局**参数，必须位于 `codex` 与 `exec` 之间（放在 `exec` 后当前 CLI 以 exit 2 拒绝，`Type=oneshot` 下等于每次触发必失败）；`--sandbox` 与 `--ephemeral` 是 `exec` 自己的参数，必须留在 `exec` 之后。
+- agent-runner 的 prompt 不得内插进 `ExecStart`：systemd 把 `%` 当 specifier 前缀，prompt 中的双引号会提前终止参数。必须渲染到 `nuc_agent_runner_prompt_path` 并以 `StandardInput=file:` 送入 `codex exec -`。该文件须在 `ReadWritePaths` 之外，否则 agent 可以改写自己的任务指令。
+- 对 agent-runner 的 Codex 约束（如 `forced_login_method`）必须用 `-c` 写在 unit 的命令行上，不得只写进 `CODEX_HOME/config.toml`——`CODEX_HOME` 在 `ReadWritePaths` 之内，那个文件只是建议值；root 拥有且在 `ProtectSystem=strict` 下只读的 unit 才是强制点。
 - agent-runner 不得加入 `sudo`、`docker` 或其他特权组，不得获得 Docker socket。
 - `ssh_harden` 在 `exclusive: true` 写入前必须读取现有 `authorized_keys`，按每行前两段（类型 + key 主体）比较；发现移除项时必须在任何文件变更前失败，只有 `-e nuc_confirm_key_removal=true` 才能继续。
 - `paseo` role 开头必须断言 `nuc_codex_admin_bin`、`nuc_codex_admin_bin_dir`、`nuc_tailscale_detected_ipv4` 都由本次 play 产生；缺失时提示使用 `--tags codex,tailscale,paseo`。

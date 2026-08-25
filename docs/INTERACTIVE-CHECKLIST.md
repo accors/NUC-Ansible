@@ -134,6 +134,19 @@
 
 ## E. agent-runner：OAuth 门禁与保持 timer 关闭
 
+> **先确认命令行本身能跑通，再手工首次运行 service。** 这里出过一次
+> `--ask-for-approval` 位置错误导致 `Type=oneshot` 每次触发即 exit 2 的问题，而
+> `ansible-lint` 与 `systemd-analyze verify` **都逮不到**：前者只验 YAML 与风格，
+> 后者只验 unit 语法，都不验目标二进制接不接受这些参数。
+>
+> ```bash
+> systemctl cat agent-codex-daily.service
+> # 把 ExecStart 原样抄出来、末尾加 --help 跑一次，确认不是 exit 2
+> ```
+>
+> 同时确认 `/etc/agent-runner/task-prompt.txt` 是 `root:agent-runner 0640`——
+> agent 必须读得到、但改不了自己的任务指令。
+
 ### E1. 账号、目录和 unit 落地后
 
 - [ ] 运行 `--tags agent_runner`。第一次应创建受限账号、`/srv/automation`、

@@ -133,6 +133,25 @@
     group: "{{ nuc_agent_runner_user }}"
     mode: "0700"
 
+- name: 创建 agent-runner 的只读配置目录
+  ansible.builtin.file:
+    path: "{{ nuc_agent_runner_config_dir }}"
+    state: directory
+    owner: root
+    group: "{{ nuc_agent_runner_user }}"
+    mode: "0750"
+
+# root 拥有、agent-runner 只读：agent 不能改写自己的任务指令。
+# 该路径在 ReadWritePaths 之外，且 /etc 在 ProtectSystem=strict 下只读。
+- name: 写入 agent-runner 的任务 prompt 文件
+  ansible.builtin.copy:
+    content: "{{ nuc_agent_runner_task_prompt }}\n"
+    dest: "{{ nuc_agent_runner_prompt_path }}"
+    owner: root
+    group: "{{ nuc_agent_runner_user }}"
+    mode: "0640"
+  notify: "agent_runner | daemon-reload system units"
+
 - name: 检查系统 npm 可执行文件
   ansible.builtin.stat:
     path: "{{ _agent_runner_npm_candidate }}"

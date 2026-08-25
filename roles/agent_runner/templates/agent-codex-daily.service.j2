@@ -1,4 +1,23 @@
-{# agent-runner 的 system-level Codex service；认证来自独立 CODEX_HOME 的 OAuth 登录态。 #}
+{#
+  agent-runner 的 system-level Codex service；认证来自独立 CODEX_HOME 的 OAuth 登录态。
+
+  ExecStart 有三处约束，改动前先读：
+
+  1. --ask-for-approval 是 codex 的**全局**参数，必须位于 codex 与 exec 之间。
+     放在 exec 后面当前 CLI 会报 `unexpected argument` 并以 exit 2 退出，
+     Type=oneshot 下等于每次触发必失败。--sandbox 与 --ephemeral 则是 exec
+     自己的参数，必须留在 exec 后面。三者位置不能整段挪动。
+
+  2. prompt 不进命令行，改由 StandardInput 从文件读入，exec 以 `-` 表示读 stdin。
+     直接内插会出两个问题：systemd 把 % 当 specifier 前缀（字面 % 需写成 %%），
+     且 prompt 里的双引号会提前终止参数。顺带 prompt 也不再出现在
+     systemctl status 与 /proc/<pid>/cmdline 里。
+
+  3. forced_login_method 用 -c 传而不是写进 CODEX_HOME/config.toml。
+     CODEX_HOME 在 ReadWritePaths 之内，agent 自己能改那个文件，所以 config.toml
+     只是建议值；本 unit 由 root 拥有且在 ProtectSystem=strict 下只读，
+     写在这里才是强制的。值不加引号：codex 先按 TOML 解析，失败则按字面字符串处理。
+#}
 [Unit]
 Description=Daily Codex automation
 After=network-online.target
@@ -13,7 +32,8 @@ Environment=HOME={{ nuc_agent_runner_home }}
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
 Environment=CODEX_HOME={{ nuc_agent_runner_codex_home }}
 UnsetEnvironment=OPENAI_API_KEY OPENAI_ADMIN_KEY
-ExecStart=/usr/local/bin/codex exec --sandbox workspace-write --ask-for-approval never "{{ nuc_agent_runner_task_prompt }}"
+StandardInput=file:{{ nuc_agent_runner_prompt_path }}
+ExecStart=/usr/local/bin/codex --ask-for-approval never -c forced_login_method=chatgpt exec --sandbox workspace-write --ephemeral -
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
