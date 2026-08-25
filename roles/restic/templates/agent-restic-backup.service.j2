@@ -1,5 +1,8 @@
 [Unit]
 Description=Nightly Restic backup for agent-nuc
+# 失败时把状态落盘。没有这条，备份失败只存在于 journal 里，
+# 而「你以为备份在跑」比「没有备份」更危险。
+OnFailure=agent-restic-backup-failed.service
 After=network-online.target
 Wants=network-online.target
 ConditionPathExists={{ nuc_restic_env_file }}

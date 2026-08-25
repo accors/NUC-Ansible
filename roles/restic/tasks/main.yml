@@ -214,6 +214,32 @@
     mode: "0644"
   notify: "restic | daemon-reload system units"
 
+- name: 安装 Restic 状态写入脚本
+  ansible.builtin.template:
+    src: agent-restic-status.j2
+    dest: "{{ nuc_restic_status_helper }}"
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: 创建 Restic 运行状态目录
+  ansible.builtin.file:
+    path: "{{ nuc_restic_status_file | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# OnFailure 目标。它只把失败落盘，不是告警——没有检查者、频率与通知出口。
+- name: 安装 Restic 失败状态记录 unit
+  ansible.builtin.template:
+    src: agent-restic-backup-failed.service.j2
+    dest: /etc/systemd/system/agent-restic-backup-failed.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: "restic | daemon-reload system units"
+
 - name: 安装 Restic nightly timer
   ansible.builtin.template:
     src: agent-restic-backup.timer.j2

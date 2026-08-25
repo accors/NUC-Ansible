@@ -24,6 +24,10 @@ nuc_restic_randomized_delay: 30m
 nuc_restic_read_data_subset: 5%
 nuc_restic_env_file: /etc/restic/agent-nuc.env
 nuc_restic_wrapper_path: /usr/local/sbin/agent-restic-backup
+# 可查询的失败状态（不是告警：没有检查者、频率与通知出口）。
+# 内容为单行 `ok <ISO 时间>` 或 `failed <ISO 时间>`。
+nuc_restic_status_file: /var/lib/agent-restic/last-run.status
+nuc_restic_status_helper: /usr/local/sbin/agent-restic-status
 nuc_restic_initialize_repository: false
 # 首次 init 后用 `restic cat config` 记下仓库 ID 填在这里（建议写进 local.yml）。
 # 留空表示不校验仓库身份。

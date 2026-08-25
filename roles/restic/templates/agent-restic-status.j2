@@ -1,0 +1,20 @@
+#!/bin/sh
+# 备份运行状态的唯一写入点：包装脚本在成功后调 `ok`，
+# service 的 OnFailure= unit 调 `failed`。集中在这里是为了让两条路径共用同一种
+# 格式，也为了让 ExecStart 保持成一条不含引号与 % 的简单命令——
+# systemd 会把 % 当 specifier 前缀，在 ExecStart 里拼 date 格式串必然出转义问题。
+set -eu
+
+STATE=${1:?用法: agent-restic-status ok|failed}
+case "$STATE" in
+  ok|failed) ;;
+  *) echo "状态只能是 ok 或 failed，收到: $STATE" >&2; exit 2 ;;
+esac
+
+STATUS_FILE={{ nuc_restic_status_file | quote }}
+mkdir -p "$(dirname "$STATUS_FILE")"
+
+# POSIX 写法而非 GNU 的 date -Is：后者在非 GNU coreutils 上失败时 $(...) 返回空串
+# 而 printf 仍成功，会写出一个没有时间戳的状态行且 exit 0。
+TS=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+printf '%s %s\n' "$STATE" "$TS" > "$STATUS_FILE"

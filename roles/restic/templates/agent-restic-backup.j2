@@ -1,6 +1,10 @@
 #!/bin/sh
 set -eu
 
+# 运行状态：本脚本在全部步骤成功后记 ok；失败路径由 service 的 OnFailure=
+# 触发 agent-restic-backup-failed.service 记 failed。两边共用同一个写入脚本，
+# 保证 {{ nuc_restic_status_file }} 永远反映最近一次运行的结局。
+
 # EnvironmentFile 负责注入凭据；未提供时立即失败，不把秘密写入命令行。
 : "${RESTIC_REPOSITORY:?RESTIC_REPOSITORY 未设置}"
 : "${RESTIC_PASSWORD:?RESTIC_PASSWORD 未设置}"
@@ -21,3 +25,6 @@ export RESTIC_REPOSITORY RESTIC_PASSWORD
   --keep-monthly {{ nuc_restic_keep.monthly | int }} \
   --keep-yearly {{ nuc_restic_keep.yearly | int }} \
   --prune
+
+# 只有走到这里才算整轮成功：set -eu 保证任一步失败都不会到达本行。
+{{ nuc_restic_status_helper }} ok

@@ -1,0 +1,13 @@
+{#
+  由 agent-restic-backup.service 的 OnFailure= 触发，只做一件事：把失败写进状态文件。
+
+  这**不是告警**。它没有检查者、没有检查频率、没有通知出口，只是把「上一次跑挂了」
+  变成一个可查询的事实——否则失败只留在 journal 里，而没人会主动去看 journal。
+  要称得上告警，得先定义谁消费这个信号、多久看一次、从哪里通知出去。
+#}
+[Unit]
+Description=Record agent-restic-backup failure status
+
+[Service]
+Type=oneshot
+ExecStart={{ nuc_restic_status_helper }} failed
