@@ -165,8 +165,8 @@ nuc_agent_runner_schedule: "*-*-* 07:30:00 Australia/Melbourne"
 nuc_agent_runner_randomized_delay: 10m
 nuc_agent_runner_timer_enabled: false
 
-nuc_ops_agent_user: ops-agent
-nuc_ops_agent_home: /home/ops-agent
+nuc_ops_agent_user: solar
+nuc_ops_agent_home: /home/solar
 nuc_ops_agent_workspace: /var/lib/openclaw-ops-agent/workspace
 nuc_ops_agent_gateway_port: 18789
 nuc_openclaw_version: 2026.8.1-beta.2

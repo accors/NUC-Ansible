@@ -198,7 +198,7 @@
 - [ ] 将 `nuc_agent_runner_timer_enabled` 改为 `true`，重跑 `--tags agent_runner`，再检查
   `systemctl list-timers agent-codex-daily.timer --all`。
 
-## F. ops-agent：只读观察者与人工 OAuth 登录
+## F. ops agent（运行账号 `solar`）：只读观察者与人工 OAuth 登录
 
 - [ ] 用 `openssl rand -hex 32` 生成独立随机 token，只写入加密 `vault.yml` 的
   `vault_nuc_ops_agent_gateway_token`；该 token 不需要离线保存，灾难恢复时重新生成。
@@ -213,20 +213,20 @@
   per-agent `allowlist/on-miss` 更严格。前者不代表 heartbeat 在运行，后者由
   `exec-policy show` 的 ops effective scope 复核；不要为消除这两条 warning 运行会改动
   其他配置的 `doctor --fix`，也不要放宽全局默认值。
-- [ ] 执行 `id ops-agent`，确认 home 是 `0700`，附加组只有 `systemd-journal`，且绝不
+- [ ] 执行 `id solar`，确认 home 是 `0700`，附加组只有 `systemd-journal`，且绝不
   属于 `sudo`、`docker`、`disk`。确认 `/etc/sudoers.d/90-ops-agent-smart` 只有两条
   设备与参数都写死的 SMART 命令。
-- [ ] 确认 `/etc/openclaw/ops-agent-gateway-token` 为 `ops-agent:ops-agent 0600`；OpenClaw
+- [ ] 确认 `/etc/openclaw/ops-agent-gateway-token` 为 `solar:solar 0600`；OpenClaw
   会拒绝 group-readable 的 SecretRef 文件，运行中的 service 则由 `ProtectSystem=strict`
   阻止改写 `/etc`。
 - [ ] 检查 `ss -lntp | grep ':18789'`：只能看到 loopback，不能看到 LAN 或 Tailscale
   地址；`openclaw-ops-agent.service` 必须由 systemd system unit 管理。
-- [ ] **人工：以 ops-agent 身份完成 OpenAI 模型登录**：
+- [ ] **人工：以 `solar` 身份完成 OpenAI 模型登录**：
 
   ```bash
-  sudo -u ops-agent -H env \
+  sudo -u solar -H env \
     OPENCLAW_CONFIG_PATH=/etc/openclaw/ops-agent.json \
-    OPENCLAW_STATE_DIR=/home/ops-agent/.openclaw \
+    OPENCLAW_STATE_DIR=/home/solar/.openclaw \
     /usr/local/bin/openclaw models auth login \
       --provider openai --method device-code --agent ops
   ```
@@ -246,9 +246,9 @@
   `systemctl restart ...`、任意 shell/解释器与未列出的参数必须被拒绝：
 
   ```bash
-  sudo -u ops-agent -H env \
+  sudo -u solar -H env \
     OPENCLAW_CONFIG_PATH=/etc/openclaw/ops-agent.json \
-    OPENCLAW_STATE_DIR=/home/ops-agent/.openclaw \
+    OPENCLAW_STATE_DIR=/home/solar/.openclaw \
     /usr/local/bin/openclaw agent --agent ops \
     --message "运行 uptime，检查失败服务，然后尝试运行 id；逐项报告是否获准"
   ```
@@ -315,7 +315,7 @@
 - [ ] Docker `daemon.json` 保留已有键，并启用 `json-file` 的 `10m`/`3` 日志轮转。
 - [ ] `/srv/automation` 与 `/srv/workspaces` 平级；agent-runner 无 sudo、Docker socket
   或管理员 home 访问权。
-- [ ] ops-agent 只有 journal 读取与两条固定 SMART sudoers；无 channel、Docker socket、
+- [ ] OpenClaw 运行账号 `solar` 只有 journal 读取与两条固定 SMART sudoers；无 channel、Docker socket、
   `disk` 组或系统修改能力，`MEMORY.md`/`memory`/`reports` 已进入 Restic 范围。
 - [ ] Restic 最近一次备份、`check --read-data-subset=<nuc_restic_read_data_subset>`
   和测试恢复均成功，离线密码可用。

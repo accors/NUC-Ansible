@@ -13,8 +13,8 @@
 - name: 校验 ops_agent 的固定安全契约
   ansible.builtin.assert:
     that:
-      - nuc_ops_agent_user == 'ops-agent'
-      - nuc_ops_agent_home == '/home/ops-agent'
+      - nuc_ops_agent_user == 'solar'
+      - nuc_ops_agent_home == '/home/solar'
       - nuc_ops_agent_workspace == '/var/lib/openclaw-ops-agent/workspace'
       - nuc_ops_agent_gateway_port | int == 18789
       - nuc_openclaw_version == '2026.8.1-beta.2'
@@ -289,7 +289,7 @@
       - "'docker' not in (_ops_agent_groups.stdout | trim).split()"
       - "'disk' not in (_ops_agent_groups.stdout | trim).split()"
     fail_msg: >-
-      ops-agent 只能属于自己的主组与 systemd-journal；不得属于 sudo、docker、disk
+      {{ nuc_ops_agent_user }} 只能属于自己的主组与 systemd-journal；不得属于 sudo、docker、disk
       或任何其他附加组。
   when: not ansible_check_mode
 
@@ -719,7 +719,7 @@
   ansible.builtin.fail:
     msg: >-
       ops 基础设施、安全审计与 Gateway 已就绪，但 ops 尚无 OpenAI OAuth profile，
-      或存在非 OAuth 的 OpenAI profile。请按交互清单以 ops-agent 身份运行
+      或存在非 OAuth 的 OpenAI profile。请按交互清单以 {{ nuc_ops_agent_user }} 身份运行
       openclaw models auth login --provider openai --method device-code --agent ops；不要选择
       API key。完成后重跑 ops_agent tag。Ansible 不代替交互式登录、不复制或备份登录态，
       也不会配置任何 channel。

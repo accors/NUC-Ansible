@@ -1,7 +1,7 @@
 ---
 # ops_agent 只重述共享契约中本 role 使用的变量。
-nuc_ops_agent_user: ops-agent
-nuc_ops_agent_home: /home/ops-agent
+nuc_ops_agent_user: solar
+nuc_ops_agent_home: /home/solar
 nuc_ops_agent_workspace: /var/lib/openclaw-ops-agent/workspace
 nuc_ops_agent_gateway_port: 18789
 nuc_openclaw_version: 2026.8.1-beta.2

@@ -126,7 +126,7 @@ SSH 私钥不得放入 Vault、仓库或备份。
 6. 用 `openssl rand -hex 32` 生成 ops Gateway token，写入已加密 Vault 的
    `vault_nuc_ops_agent_gateway_token`，运行 `--tags ops_agent`。role 会安装精确 exec
    approvals、policy、loopback Gateway，并依次运行 doctor 与安全审计；随后按清单以
-   `ops-agent` 身份完成 OpenAI ChatGPT/Codex device-code OAuth 登录。未登录或存在
+   `solar` 身份完成 OpenAI ChatGPT/Codex device-code OAuth 登录。未登录或存在
    非 OAuth 的 OpenAI profile 时，role 会有意失败。
 7. 确认 Restic 仓库和 Vault 密码无误，运行 `--tags restic`，然后按清单立即执行
    一次 service 与完整性检查。
@@ -176,7 +176,7 @@ base → ssh_harden → srv_layout → docker → codex → tailscale → paseo
 - agent-runner 的 Codex 位于 `/usr/local/bin`，只读取其独立 `CODEX_HOME` 内由人工
   ChatGPT/Codex OAuth 登录生成的缓存；unit 不注入任何 OpenAI API key，并显式清除
   可能由 systemd manager 继承的 OpenAI key 环境变量。
-- ops-agent 只有 `systemd-journal` 附加组，不属于 `sudo`、`docker`、`disk`。它的
+- OpenClaw 运行账号 `solar` 只有 `systemd-journal` 附加组，不属于 `sudo`、`docker`、`disk`。它的
   Gateway 只绑定 loopback，token 通过仅本人可读的 `0600` file SecretRef 加载；没有 channel、webhook、
   browser、MCP、elevated、Skill Workshop 或 Docker sandbox。OpenAI provider 使用
   ChatGPT/Codex OAuth，但模型仍显式走 OpenClaw 原生 runtime，不隐式启用 Codex
