@@ -11,6 +11,11 @@
 # 长度不超过 63。会出现在 SSH 提示符、journald 日志与 Tailscale 设备名里。
 nuc_hostname: CHANGE_ME
 
+# 是否启用 ops_agent（OpenClaw）。默认 false —— 它是唯一会把系统 journal 内容
+# 作为 tool result 送进模型上下文的组件，也就是唯一一条把系统日志送出本机的路径。
+# 确认接受这一点再改为 true。
+nuc_ops_agent_enabled: false
+
 nuc_admin_user: CHANGE_ME
 
 # 管理员登录公钥，至少一把，整行照抄 .pub 文件内容。

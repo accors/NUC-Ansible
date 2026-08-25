@@ -165,8 +165,9 @@ nuc_agent_runner_schedule: "*-*-* 07:30:00 Australia/Melbourne"
 nuc_agent_runner_randomized_delay: 10m
 nuc_agent_runner_timer_enabled: false
 
-# 人工门禁：未显式置 true 时 site.yml 跳过整个 ops_agent role。
-nuc_ops_agent_enabled: false
+# nuc_ops_agent_enabled 是本机部署选择，由不提交的 local.yml 提供，此处不定义。
+# 注意：group_vars/all/ 按字母序加载且后者覆盖前者，main.yml 在 local.yml 之后，
+# 一旦在这里给出定义就会盖掉 local.yml 的值。role defaults 里的 false 是安全兜底。
 nuc_ops_agent_user: solar
 nuc_ops_agent_home: /home/solar
 nuc_ops_agent_workspace: /var/lib/openclaw-ops-agent/workspace

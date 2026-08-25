@@ -123,6 +123,8 @@ nuc_restic_excludes:
 
 `group_vars/all/vault.example.yml` 只提交占位符；真实的 `vault.yml` 必须经 `ansible-vault` 加密并由 `.gitignore` 排除。同样地，`inventory.yml` 与 `files/preseed.cfg` 只提交 `.example` 模板，真实文件由 `.gitignore` 排除。
 
+**加载顺序陷阱（务必遵守）**：`group_vars/all/` 内的文件按**字母序**加载，后加载者覆盖先加载者。`local.yml` 排在 `main.yml` **之前**，因此 `main.yml` 会覆盖 `local.yml`。本机覆盖之所以成立，唯一原因是 `main.yml` 对这些变量**只写注释、不给定义**。一旦有人出于「补全文档」把某个本机变量在 `main.yml` 里赋了值，`local.yml` 就会静默失效，而现象是「我明明改了 local.yml 却没生效」，极难定位。安全兜底放在 role 的 `defaults/main.yml`（优先级最低），由 `local.yml` 覆盖。已实测确认：`main.yml` 定义时其值胜出；`main.yml` 不定义时 `local.yml` 胜过 role defaults。
+
 | 变量 | 用途 | 来源 |
 |---|---|---|
 | `vault_nuc_restic_password` | Restic 独立随机长密码 | 12.2 |
