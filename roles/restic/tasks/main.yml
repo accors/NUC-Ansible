@@ -57,40 +57,65 @@
     mode: "0600"
   no_log: true
 
-- name: 只读探测 Restic 仓库快照
+# 依赖 restic 的退出码而非英文错误文本：文本会随版本和 locale 变化，
+# 而 `cat config` 的 10（仓库不存在）自 0.17.0、12（密码错误）自 0.17.1 起是契约。
+# 先断言版本，否则在旧 restic 上 10 会被当成普通失败，判定逻辑静默失效。
+- name: 读取已安装的 restic 版本
   ansible.builtin.command:
-    cmd: /usr/bin/restic snapshots --no-lock
+    cmd: /usr/bin/restic version
+  register: _restic_version_raw
+  changed_when: false
+  when: not (ansible_check_mode | bool)
+
+- name: 要求 restic 版本提供退出码 10 与 12
+  ansible.builtin.assert:
+    that:
+      - (_restic_version_raw.stdout | regex_search('restic\\s+([0-9]+\\.[0-9]+\\.[0-9]+)', '\\1') | first)
+        is version('0.17.1', '>=')
+    fail_msg: >-
+      已安装的 restic 版本低于 0.17.1，不提供 `cat config` 的退出码 10/12。
+      本 role 的仓库存在性判定依赖这两个码，在旧版本上会把「仓库不存在」误判为
+      普通失败。Debian trixie 提供 0.18.0，请确认软件源与安装结果。
+  when: not (ansible_check_mode | bool)
+
+- name: 只读探测 Restic 仓库是否存在
+  ansible.builtin.command:
+    cmd: /usr/bin/restic cat config
   environment:
     RESTIC_REPOSITORY: "{{ nuc_restic_repository }}"
     RESTIC_PASSWORD: "{{ vault_nuc_restic_password }}"
-  register: _restic_snapshots
+  register: _restic_cat_config
   changed_when: false
-  failed_when: >-
-    _restic_snapshots.rc != 0 and not (
-      (_restic_snapshots.stderr is search('(?i)unable to open config file:.*no such file or directory'))
-      or (_restic_snapshots.stderr is search('(?i)repository (?:is )?not initialized'))
-    )
+  failed_when: _restic_cat_config.rc not in [0, 10, 12]
   no_log: true
   when: not (ansible_check_mode | bool)
 
-- name: 记录 Restic 仓库已初始化状态
+- name: 在仓库密码错误时明确失败
+  ansible.builtin.fail:
+    msg: >-
+      restic 以退出码 12 拒绝了 vault_nuc_restic_password：仓库存在但密码不对。
+      不要继续，也不要允许本 role 执行 init —— 换个密码 init 会在同一位置留下
+      一个全新的空仓库。请核对 Vault 中的密码与离线副本。
+  when:
+    - not (ansible_check_mode | bool)
+    - _restic_cat_config.rc | default(0) == 12
+
+- name: 记录 Restic 仓库存在性
   ansible.builtin.set_fact:
-    _restic_repository_initialized: "{{ _restic_snapshots.rc == 0 }}"
-    _restic_repository_uninitialized: >-
-      {{
-        (_restic_snapshots.rc != 0)
-        and (
-          (_restic_snapshots.stderr is search('(?i)unable to open config file:.*no such file or directory'))
-          or (_restic_snapshots.stderr is search('(?i)repository (?:is )?not initialized'))
-        )
-      }}
+    _restic_repository_initialized: "{{ _restic_cat_config.rc == 0 }}"
+    _restic_repository_uninitialized: "{{ _restic_cat_config.rc == 10 }}"
   when: not (ansible_check_mode | bool)
 
 - name: 未初始化仓库且门禁关闭时停止
   ansible.builtin.fail:
     msg: >-
-      Restic 仓库尚未初始化；请确认 nuc_restic_repository 后手工执行首次验收，
-      或将 nuc_restic_initialize_repository 设为 true 允许本 role 执行 restic init。
+      restic 报告 {{ nuc_restic_repository }} 处没有仓库（退出码 10）。
+      本 role 默认不会自动创建 —— 因为地址写错时 init 会在错误位置建出一个**全新的
+      有效仓库**，此后备份全部“成功”，而你的历史快照一个都不在里面，直到需要恢复
+      那天才会发现。
+      请先人工确认地址无误：地址对但仓库确实还没建，就把
+      nuc_restic_initialize_repository 临时设为 true 跑一次，记下 `restic cat config`
+      的仓库 ID 写入 nuc_restic_expected_repository_id，然后把门禁改回 false。
   when:
     - not (ansible_check_mode | bool)
     - _restic_repository_uninitialized | default(false) | bool
@@ -120,6 +145,51 @@
     - _restic_init is defined
     - not (_restic_init.skipped | default(false))
     - _restic_init.rc == 0
+
+# --- 仓库身份校验：确认连上的是「那个」仓库，而不是同名/邻近路径上的另一个 ---
+- name: 读取仓库配置以取得仓库 ID
+  ansible.builtin.command:
+    cmd: /usr/bin/restic cat config
+  environment:
+    RESTIC_REPOSITORY: "{{ nuc_restic_repository }}"
+    RESTIC_PASSWORD: "{{ vault_nuc_restic_password }}"
+  register: _restic_config_final
+  changed_when: false
+  failed_when: _restic_config_final.rc != 0
+  no_log: true
+  when:
+    - not (ansible_check_mode | bool)
+    - _restic_repository_initialized | default(false) | bool
+
+- name: 提取仓库 ID
+  ansible.builtin.set_fact:
+    _restic_repository_id: "{{ (_restic_config_final.stdout | from_json).get('id', '') }}"
+  when:
+    - not (ansible_check_mode | bool)
+    - _restic_repository_initialized | default(false) | bool
+
+- name: 在仓库 ID 与预期不一致时停止
+  ansible.builtin.fail:
+    msg: >-
+      仓库 ID 不匹配：期望 {{ nuc_restic_expected_repository_id }}，
+      实际 {{ _restic_repository_id | default('(未取得)') }}。
+      nuc_restic_repository 指向的不是你记录过的那个仓库。在查清之前不要备份 ——
+      继续下去会把快照写进一个陌生仓库，同时让你误以为原仓库仍在更新。
+  when:
+    - not (ansible_check_mode | bool)
+    - (nuc_restic_expected_repository_id | string | trim | length) > 0
+    - (nuc_restic_expected_repository_id | string | trim) != (_restic_repository_id | default(''))
+
+- name: 提示记录仓库 ID
+  ansible.builtin.debug:
+    msg: >-
+      nuc_restic_expected_repository_id 尚未设置，本次未校验仓库身份。
+      当前仓库 ID 为 {{ _restic_repository_id | default('(未取得)') }} ——
+      确认这是预期仓库后写入 group_vars/all/local.yml，之后每次运行都会校验。
+  when:
+    - not (ansible_check_mode | bool)
+    - _restic_repository_initialized | default(false) | bool
+    - (nuc_restic_expected_repository_id | string | trim | length) == 0
 
 - name: 检查现有 Restic nightly timer unit
   ansible.builtin.stat:

@@ -91,7 +91,8 @@ PDF v1.4 只明确固定 Debian 13.6 与 Node.js 22 LTS。其余软件没有给�
 | `nuc_restic_read_data_subset` | string | `5%` | 12.2、12.4 | 人工/月度完整性检查读取比例 |
 | `nuc_restic_env_file` | path | `/etc/restic/agent-nuc.env` | 12.2、12.3 | root-only 环境文件 |
 | `nuc_restic_wrapper_path` | path | `/usr/local/sbin/agent-restic-backup` | 任务补充、12.2 | 串行执行 backup 与 forget 的包装脚本 |
-| `nuc_restic_initialize_repository` | boolean | `true` | 任务补充、12.2 | `snapshots` 探测失败且确认为未初始化时执行 `restic init` |
+| `nuc_restic_initialize_repository` | boolean | `false` | 任务补充、12.2 | **默认禁止自动 init**：地址写错时 init 会在错误位置建出一个全新的有效仓库，此后备份全部「成功」而历史快照不在其中。首次建库需人工临时置 true |
+| `nuc_restic_expected_repository_id` | string | `""` | 任务补充 | `restic cat config` 的仓库 ID；非空时每次运行都校验，不一致即 fail。建议首次建库后写入 `local.yml` |
 | `nuc_restic_enable_timer` | boolean | `true` | 任务补充、12.3 | 安装并启用 nightly service/timer |
 
 `nuc_restic_excludes` 的固定默认值：
@@ -209,6 +210,7 @@ role tag 与目录名完全相同，`site.yml` 只按下列顺序表达依赖，
 - 优先使用模块，禁止用 `shell`/`command` 代替 `apt`、`file`、`template`、`service`、`user`、`authorized_key` 等已有模块。
 - 所有下载使用 TLS、固定官方来源，并通过 `get_url`/APT keyring 管理；不得使用 `curl | sh`。若 PDF 只展示安装脚本，role 应展开为可审计的下载与条件执行。
 - 秘密不得进入 task 名、日志、模板 diff 或命令输出；涉及 vault token/password 的 task 必须 `no_log: true`。不得提交真实密码、token、密钥、公钥指纹。
+- `restic` 的仓库存在性判定必须用 `restic cat config` 的退出码（10 = 仓库不存在，12 = 密码错误），不得匹配英文错误文本——文本随版本与 locale 变化。因此 role 必须先断言 restic ≥ 0.17.1，否则判定会静默失效。
 - `cloudflared` 不得使用 `cloudflared service install`：该命令需要 `creates:` 才幂等，而 `creates:` 会让 unit 存在后永不重跑，vault 中轮换 token 后本机不再收敛。token 文件与 unit 一律由 Ansible 的 `copy`/`template` 管理，二者都 `notify` 重启；token 只走 `--token-file`，不得进入 `ExecStart` 文本或命令行。
 - `docker` 必须读取并递归合并现有 `/etc/docker/daemon.json`，保留契约外已有键；不得整体覆盖。
 - `ssh_harden` 必须先落地 `authorized_keys`，再写 `10-hardening.conf`；写配置的任务必须带 `validate: /usr/sbin/sshd -t -f %s`。

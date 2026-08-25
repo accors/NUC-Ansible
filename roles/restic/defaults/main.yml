@@ -21,5 +21,8 @@ nuc_restic_randomized_delay: 30m
 nuc_restic_read_data_subset: 5%
 nuc_restic_env_file: /etc/restic/agent-nuc.env
 nuc_restic_wrapper_path: /usr/local/sbin/agent-restic-backup
-nuc_restic_initialize_repository: true
+nuc_restic_initialize_repository: false
+# 首次 init 后用 `restic cat config` 记下仓库 ID 填在这里（建议写进 local.yml）。
+# 留空表示不校验仓库身份。
+nuc_restic_expected_repository_id: ""
 nuc_restic_enable_timer: true

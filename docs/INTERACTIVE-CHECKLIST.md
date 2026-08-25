@@ -158,8 +158,18 @@
 - [ ] 为 `vault_nuc_restic_password` 生成独立随机长密码，并**人工保存一份离线副本**。
   `nuc_restic_repository` 不得在 URL 中嵌入账号、密码或 token。
 - [ ] 核对备份范围、排除项和保留策略，再运行 `--tags restic`。当
-  `nuc_restic_initialize_repository: true` 时，role 只会对已确认未初始化的仓库执行
-  `restic init`。
+  **`nuc_restic_initialize_repository` 默认为 `false`，role 不会自动建库。**
+  这是刻意的：地址写错时 `restic init` 会在错误位置建出一个全新的、完全有效的
+  仓库，之后每次备份都报成功，而你的历史快照一个都不在里面——直到需要恢复
+  那天才会发现。
+- [ ] **首次建库**：确认地址无误后，把 `nuc_restic_initialize_repository` 临时设为
+  `true` 跑一次，然后**立刻改回 `false`**。
+- [ ] **记录仓库 ID**。首次建库后 role 会在输出里打印当前仓库 ID；把它写入
+  `group_vars/all/local.yml` 的 `nuc_restic_expected_repository_id`。此后每次运行
+  都会校验连上的确实是这个仓库，地址被改动或指向了邻近路径上的另一个仓库时会
+  立即失败而不是静默换库。ID 也应抄进离线凭据清单。
+- [ ] 若 role 报「退出码 12 / 密码错误」，**不要**打开自动 init —— 仓库是存在的，
+  用错误的密码 init 会在同一位置留下第二个空仓库。先核对 Vault 与离线副本。
 - [ ] **人工：立即运行一次 nightly service 并检查日志**：
 
   ```bash
@@ -202,6 +212,7 @@
 以下内容必须存在 NUC 之外，且不只有一份。它们同时是 `README.md` 第 6 节灾难恢复顺序的前置条件：
 没有这些，重装后的机器无法重新收敛，备份也无法解密。
 
+- [ ] Restic 仓库 ID（`nuc_restic_expected_repository_id`）
 - [ ] Restic 仓库地址与密码（`nuc_restic_repository`、`vault_nuc_restic_password`）
 - [ ] Ansible Vault 密码（解密 `group_vars/all/vault.yml` 用）
 - [ ] `group_vars/all/local.yml` 与 `inventory.yml` 的内容，或它们的备份位置
