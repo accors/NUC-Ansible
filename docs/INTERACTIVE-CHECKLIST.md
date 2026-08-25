@@ -200,8 +200,17 @@
 
 ## F. ops agent（运行账号 `solar`）：只读观察者与人工 OAuth 登录
 
+> **默认不启用。** `nuc_ops_agent_enabled` 为 `false` 时 `site.yml` 会跳过整个 role。
+> 这是本项目唯一一条把系统日志送出本机的路径（journal 内容会作为 tool result 进入
+> 模型上下文），确认要用再显式打开。
+
 - [ ] 用 `openssl rand -hex 32` 生成独立随机 token，只写入加密 `vault.yml` 的
   `vault_nuc_ops_agent_gateway_token`；该 token 不需要离线保存，灾难恢复时重新生成。
+- [ ] 把 `nuc_ops_agent_enabled` 改为 `true`（默认 `false`，否则 role 整体跳过）。
+- [ ] 核对 exec 白名单里的 journal 相关规则：`journalctl` 必须带 `-u` 且 unit 属于
+  `nuc_ops_agent_observable_units`；**不得存在任何 `systemctl status` 规则**——
+  它默认附带最近 10 行 journal，会绕过 unit 白名单。机器读取一律用
+  `systemctl show` 并限定属性。新增被监控服务时要显式加进白名单。
 - [ ] 运行 `--tags ops_agent`。role 应完成 OpenClaw 安装、精确 approvals 导入、policy
   检查、`security audit --fix`、普通/深度审计与 loopback Gateway 健康检查。
 - [ ] `doctor --lint --severity-min error` 可能在 stderr 提示 `tools.fs` 不会隐式加入
@@ -277,6 +286,12 @@
   `group_vars/all/local.yml` 的 `nuc_restic_expected_repository_id`。此后每次运行
   都会校验连上的确实是这个仓库，地址被改动或指向了邻近路径上的另一个仓库时会
   立即失败而不是静默换库。ID 也应抄进离线凭据清单。
+- [ ] 记住备份状态的查询方式：`cat /var/lib/agent-restic/last-run.status`，
+  内容是 `ok <ISO时间>` 或 `failed <ISO时间>`。**这不是告警**——没有检查者、
+  没有检查频率、没有通知出口，只是把「上一次跑挂了」变成可查询的事实。
+  在定义出谁看、多久看、从哪通知之前，不要把它当成会主动找你的东西。
+- [ ] 手工触发一次失败（例如临时把 `nuc_restic_repository` 指向不存在的路径并
+  跑一次 service），确认状态文件变成 `failed`，再恢复并确认变回 `ok`。
 - [ ] 若 role 报「退出码 12 / 密码错误」，**不要**打开自动 init —— 仓库是存在的，
   用错误的密码 init 会在同一位置留下第二个空仓库。先核对 Vault 与离线副本。
 - [ ] **人工：立即运行一次 nightly service 并检查日志**：

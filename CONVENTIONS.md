@@ -79,6 +79,11 @@ PDF v1.4 只明确固定 Debian 13.6 与 Node.js 22 LTS。其余软件没有给�
 | `nuc_cloudflared_config_dir` | path | `/etc/cloudflared` | 10.4 | token 文件所在目录，`0700 root:root` |
 | `nuc_cloudflared_token_path` | path | `/etc/cloudflared/token` | 10.4 | tunnel token 文件，`0600 root:root`；unit 以 `--token-file` 读取 |
 | `nuc_openclaw_version` | string | `2026.8.1-beta.2` | 任务补充 | npm 上与已复核 mode/SQLite approvals/policy schema 匹配的精确预发布版；升级前必须重审 |
+| `nuc_ops_agent_enabled` | boolean | `false` | 任务补充 | 人工门禁；`site.yml` 以 role 级 `when:` 控制，为 `false` 时整个 role 不执行 |
+| `nuc_ops_agent_observable_units` | list[string] | 见 defaults | 任务补充 | journal 与 unit 状态读取的 unit 白名单 |
+| `nuc_ops_agent_observable_properties` | list[string] | 见 defaults | 任务补充 | `systemctl show` 允许读取的属性白名单 |
+| `nuc_restic_status_file` | path | `/var/lib/agent-restic/last-run.status` | 任务补充 | 单行 `ok`/`failed` 加 ISO 时间戳 |
+| `nuc_restic_status_helper` | path | `/usr/local/sbin/agent-restic-status` | 任务补充 | 状态写入的唯一入口，成功与失败两条路径共用 |
 | `nuc_restic_package_version` | string | `""` | 6.1、12.2 | 空值表示 Debian 13.6 当前候选 |
 
 ### 2.4 agent-runner、ops_agent 与 Restic
@@ -255,6 +260,9 @@ role tag 与目录名完全相同，`site.yml` 只按下列顺序表达依赖，
 - agent-runner 的 `codex` 命令行有三处不可整段挪动的约束：`--ask-for-approval` 是**全局**参数，必须位于 `codex` 与 `exec` 之间（放在 `exec` 后当前 CLI 以 exit 2 拒绝，`Type=oneshot` 下等于每次触发必失败）；`--sandbox` 与 `--ephemeral` 是 `exec` 自己的参数，必须留在 `exec` 之后。
 - agent-runner 的 prompt 不得内插进 `ExecStart`：systemd 把 `%` 当 specifier 前缀，prompt 中的双引号会提前终止参数。必须渲染到 `nuc_agent_runner_prompt_path` 并以 `StandardInput=file:` 送入 `codex exec -`。该文件须在 `ReadWritePaths` 之外，否则 agent 可以改写自己的任务指令。
 - 对 agent-runner 的 Codex 约束（如 `forced_login_method`）必须用 `-c` 写在 unit 的命令行上，不得只写进 `CODEX_HOME/config.toml`——`CODEX_HOME` 在 `ReadWritePaths` 之内，那个文件只是建议值；root 拥有且在 `ProtectSystem=strict` 下只读的 unit 才是强制点。
+- `ops_agent` 默认不启用（`nuc_ops_agent_enabled: false`）。它是唯一会把系统 journal 内容作为 tool result 送进模型上下文的组件，必须显式开启。
+- `ops_agent` 读取 journal 与 unit 状态时，unit 必须来自 `nuc_ops_agent_observable_units` 白名单：确定性白名单优先于输出侧的正则脱敏，后者穷举不完日志中 secret 的形态，只能当兜底。不得使用 `systemctl status`——它默认附带最近 10 行 journal，会绕过白名单；机器读取一律用 `systemctl show` 并限定属性。
+- `restic` 的 nightly service 必须有 `OnFailure=`，把失败写入 `nuc_restic_status_file`。该文件是**可查询的失败状态，不是告警**：在定义检查者、检查频率与通知出口之前，文档中不得称其为告警。
 - agent-runner 不得加入 `sudo`、`docker` 或其他特权组，不得获得 Docker socket。
 - `ssh_harden` 在 `exclusive: true` 写入前必须读取现有 `authorized_keys`，按每行前两段（类型 + key 主体）比较；发现移除项时必须在任何文件变更前失败，只有 `-e nuc_confirm_key_removal=true` 才能继续。
 - `paseo` role 开头必须断言 `nuc_codex_admin_bin`、`nuc_codex_admin_bin_dir`、`nuc_tailscale_detected_ipv4` 都由本次 play 产生；缺失时提示使用 `--tags codex,tailscale,paseo`。

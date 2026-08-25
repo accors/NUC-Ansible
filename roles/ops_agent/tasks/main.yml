@@ -63,6 +63,20 @@
       - nodes
       - computer
 
+# unit 名含点号，必须转义后再拼进正则。
+- name: 组装 ops 可观察 unit 与属性的正则片段
+  ansible.builtin.set_fact:
+    _ops_agent_unit_re: "(?:{{ nuc_ops_agent_observable_units | map('regex_escape') | join('|') }})"
+    _ops_agent_prop_re: "(?:{{ nuc_ops_agent_observable_properties | join('|') }})"
+
+# journal 与 unit 状态的读取全部限定在 nuc_ops_agent_observable_units 内。
+# 三条约束的来由：
+# 1. 原先有一条无 -u 的 `journalctl --no-pager -n N`，等于全系统 journal 最多
+#    9999 行，已删除。
+# 2. 原先的 `-u [A-Za-z0-9@_.:-]+` 形式上限定了 unit，实际匹配任意 unit 名，
+#    不是白名单，现改为显式枚举。
+# 3. 原先的 `systemctl status <unit>` 默认附带最近 10 行 journal，等于绕过上面
+#    两条限制。改用 `systemctl show`：输出是 key=value 元数据，不含日志。
 - name: 定义 ops 的精确 exec 命令与参数白名单
   ansible.builtin.set_fact:
     _ops_agent_exec_allowlist:
@@ -71,15 +85,13 @@
       - pattern: /usr/bin/systemctl
         argPattern: '^list-units --type=service --state=failed --no-pager$'
       - pattern: /usr/bin/systemctl
-        argPattern: '^status [A-Za-z0-9@_.:-]+ --no-pager$'
+        argPattern: '^show {{ _ops_agent_unit_re }} --property={{ _ops_agent_prop_re }}(?:,{{ _ops_agent_prop_re }})*$'
       - pattern: /usr/bin/systemctl
-        argPattern: '^(?:is-active|is-failed) [A-Za-z0-9@_.:-]+$'
+        argPattern: '^(?:is-active|is-failed) {{ _ops_agent_unit_re }}$'
       - pattern: /usr/bin/journalctl
-        argPattern: '^--no-pager -n [0-9]{1,4}$'
+        argPattern: '^--no-pager -n [0-9]{1,4} -u {{ _ops_agent_unit_re }}$'
       - pattern: /usr/bin/journalctl
-        argPattern: '^--no-pager -n [0-9]{1,4} -u [A-Za-z0-9@_.:-]+$'
-      - pattern: /usr/bin/journalctl
-        argPattern: '^--no-pager -p (?:0|1|2|3|4|emerg|alert|crit|err|warning) --since (?:today|-[0-9]+(?:min|h|d))$'
+        argPattern: '^--no-pager -p (?:0|1|2|3|4|emerg|alert|crit|err|warning) --since (?:today|-[0-9]+(?:min|h|d)) -u {{ _ops_agent_unit_re }}$'
       - pattern: /usr/bin/df
         argPattern: '^-h$'
       - pattern: /usr/bin/free

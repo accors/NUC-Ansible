@@ -8,6 +8,43 @@ nuc_ops_agent_enabled: false
 nuc_ops_agent_user: solar
 nuc_ops_agent_home: /home/solar
 nuc_ops_agent_workspace: /var/lib/openclaw-ops-agent/workspace
+
+# ops 可观察的 unit 白名单。journal 与 unit 状态的读取一律限定在这张表内：
+# 这是确定性控制，可穷举、可审计。正则脱敏之类的输出过滤只能当兜底，
+# 因为日志里 secret 的形态穷举不完。新增被监控服务时必须显式加进来。
+nuc_ops_agent_observable_units:
+  - ssh.service
+  - ufw.service
+  - docker.service
+  - containerd.service
+  - tailscaled.service
+  - cloudflared.service
+  - smartd.service
+  - unattended-upgrades.service
+  - systemd-journald.service
+  - agent-codex-daily.service
+  - agent-codex-daily.timer
+  - agent-restic-backup.service
+  - agent-restic-backup.timer
+  - agent-restic-backup-failed.service
+  - openclaw-ops-agent.service
+
+# `systemctl show` 允许读取的属性。show 输出是 key=value 元数据、不含日志，
+# 但仍限定属性：Environment= 一类属性可能带出 unit 里内联的敏感值。
+nuc_ops_agent_observable_properties:
+  - ActiveState
+  - SubState
+  - LoadState
+  - UnitFileState
+  - Result
+  - ExecMainStatus
+  - ExecMainStartTimestamp
+  - ExecMainExitTimestamp
+  - ActiveEnterTimestamp
+  - InactiveEnterTimestamp
+  - NRestarts
+  - LastTriggerUSec
+  - NextElapseUSecRealtime
 nuc_ops_agent_gateway_port: 18789
 nuc_openclaw_version: 2026.8.1-beta.2
 nuc_nodejs_major: 22
