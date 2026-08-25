@@ -338,7 +338,9 @@ NUC 物理丢失或疑似被入侵时立即执行，顺序无强制依赖但都�
 - [ ] 撤销 Cloudflare Access 会话与设备授权
 - [ ] 在 ChatGPT/OpenAI 账号安全后台手动 revoke 与该节点有关的 Codex OAuth 登录会话
       （管理员 Codex、agent-runner Codex、ops OpenClaw）；本配置没有可轮换的 OpenAI API key
-- [ ] 更换 Restic repo 密码并同步离线副本
+- [ ] 更换 Restic repo 密码并同步离线副本 —— 磁盘未加密，必须假定盘上的
+      `/etc/restic/agent-nuc.env` 已被读走，即整个备份仓库已暴露
+- [ ] 若是换盘/RMA/转卖而非失窃：先 `nvme format -s1 /dev/nvme0n1` 再交出硬盘
 - [ ] 检查并轮换所有 Git 远端 deploy key
 - [ ] 轮换 Cloudflare tunnel token 与 Ansible Vault 密码
 - [ ] 重新生成 `vault_nuc_ops_agent_gateway_token`；在可信重建主机上分别重新完成三处

@@ -190,6 +190,24 @@ base → ssh_harden → srv_layout → docker → codex → tailscale → paseo
   `docs/openclaw-ops-agent-security-research.md`。
 - unattended-upgrades 已启用，但自动重启保持关闭。
 
+### 明确接受的风险：磁盘不加密
+
+本项目**不启用磁盘加密**（见 `files/preseed.example.cfg` 的
+`partman-auto/method string regular`）。这是权衡后的决定，不是疏漏：
+
+加密后每次启动都需要人到场输入口令（TPM2 无 PIN 的自动解锁挡不住整机失窃——
+机器会正常解密启动并自动重连 tailnet 与 Cloudflare 隧道）。对一台停电后要靠人
+回家才能恢复的远程依赖节点，这个可用性代价大于它挡下的低概率威胁。
+
+由此产生两条承重约束：
+
+- **磁盘上的凭据一律按明文对待。** `/etc/restic/agent-nuc.env` 里的 Restic 仓库
+  密码尤其重要——它把损失从「这台机器的数据」放大成「所有历史备份」。
+  机器一旦离开物理控制，`docs/INTERACTIVE-CHECKLIST.md` 里的失窃处置清单
+  从「双保险」变成**唯一控制**，必须逐条执行完。
+- **换盘、RMA、转卖或丢弃前必须先安全擦除**，例如 `nvme format -s1 /dev/nvme0n1`。
+  不加密意味着这一步没有自动兜底，只能靠流程记住。
+
 最终验收项目和故障定位命令见 `docs/INTERACTIVE-CHECKLIST.md`。
 
 ## 6. 灾难恢复顺序
