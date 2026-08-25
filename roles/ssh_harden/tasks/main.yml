@@ -24,6 +24,27 @@
     loop_var: _ssh_harden_declared_key
     label: "{{ _ssh_harden_declared_key | string | truncate(40, true, '…') }}"
 
+# 归一化取 split()[0:2]，因此第一段必须真的是 key 类型。带 options 的条目
+# （from="1.2.3.4" ssh-ed25519 AAAA...）会让第一段变成 options，比较结果永远
+# 不匹配：exclusive=true 下表现为「每次运行都说要移除一把其实存在的公钥」，
+# 或反复重写 authorized_keys。本项目明确不支持带 options 的条目。
+- name: 拒绝带 options 或类型未知的 authorized_keys 条目
+  ansible.builtin.assert:
+    that:
+      - (_ssh_harden_declared_key | trim).split()[0] in nuc_ssh_supported_key_types
+    fail_msg: >-
+      nuc_admin_authorized_keys 中存在第一段不是已知 key 类型的条目，
+      第一段为「{{ (_ssh_harden_declared_key | trim).split()[0] }}」。
+      本项目不支持带 options 的 authorized_keys 条目（from=、command=、no-pty 等），
+      因为公钥比对只取前两段，带 options 会比对错字段并在 exclusive=true 下误删或
+      反复重写。请去掉 options 只保留「类型 主体 [注释]」；确有 options 需求时，
+      改用 sshd_config 的 Match 块表达，不要写进 authorized_keys。
+      已知类型见 nuc_ssh_supported_key_types。
+  loop: "{{ nuc_admin_authorized_keys }}"
+  loop_control:
+    loop_var: _ssh_harden_declared_key
+    label: "{{ (_ssh_harden_declared_key | trim).split()[0] }}"
+
 - name: 按类型与 key 主体归一化声明的管理员公钥
   ansible.builtin.set_fact:
     _ssh_harden_declared_key_identities: >-

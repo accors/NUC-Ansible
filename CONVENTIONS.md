@@ -240,6 +240,7 @@ role tag 与目录名完全相同，`site.yml` 只按下列顺序表达依赖，
 - `docker` 必须读取并递归合并现有 `/etc/docker/daemon.json`，保留契约外已有键；不得整体覆盖。
 - 已发布容器端口的流量在到达 UFW 的 INPUT 规则前就被 DNAT 转发，UFW 挡不住 `docker run -p`。`daemon.json` 必须同时设置 `ip`（默认 bridge）与 `default-network-opts.bridge.com.docker.network.bridge.host_binding_ipv4`（Compose 建的用户定义 bridge），只设其一覆盖不全。二者都是**默认值**，compose 中显式写 host IP 仍可覆盖；强制边界需要 `DOCKER-USER` 链规则，留待部署第一个 stack 时决定。
 - `ssh_harden` 必须先落地 `authorized_keys`，再写 `10-hardening.conf`；写配置的任务必须带 `validate: /usr/sbin/sshd -t -f %s`。
+- `nuc_admin_authorized_keys` 的每一项首段必须是 `nuc_ssh_supported_key_types` 中的类型：公钥比对只取前两段，带 options 的条目（`from=`、`command=`、`no-pty` 等）会比对错字段，在 `exclusive: true` 下表现为反复重写或误删。本项目明确不支持带 options 的条目，需要限制来源时用 sshd_config 的 `Match` 块表达。
 - UFW 必须含 LAN SSH 规则、`tailscale0` 上的 22/6767，以及一条显式拒绝 `nuc_lan_cidr` 访问 `nuc_paseo_port` 的规则；接口未出现不影响先写规则。
 - Paseo `config.json` 是唯一配置来源；unit 的 `ExecStart` 除 `daemon start --foreground` 外不得传配置参数。`daemon.listen` 固定 `0.0.0.0:<port>`，不绑定 `tailscale0` 地址——绑定会让 daemon 依赖 tailscaled 存活，把 Cloudflare Access 那条路径一并拖下水；unit 中也不得再加等待 tailscale 接口的 `ExecStartPre`。
 - Paseo user unit PATH 必须含 `nuc_codex_admin_bin_dir` 的真实探测值；不得照抄固定 PATH。`loginctl enable-linger` 必须先于任何 `systemctl --user`，后者必须显式传 `XDG_RUNTIME_DIR=/run/user/{{ nuc_admin_uid }}`。
