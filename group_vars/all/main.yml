@@ -27,7 +27,9 @@
 # nuc_tailscale_ipv4        string
 #   人工执行 `sudo tailscale up` 授权后，用 `tailscale ip -4` 实测得到的唯一地址。
 #   必须属于 100.64.0.0/10；tailscale role 会与实测值比对，不一致即失败。
-#   Paseo 只在该地址上监听。（CONVENTIONS 2.1、PDF 8.5、10.2）
+#   **不进入 Paseo 的 daemon.listen**（那是 0.0.0.0:<port>，隔离交给 UFW），
+#   但必须进入 daemon.hostnames —— tailnet 客户端用它做 Host 校验，顺手删掉会
+#   被拒绝，且现象看起来像「连接被拒绝」。（CONVENTIONS 2.1、PDF 8.5、10.2）
 #
 # nuc_access_hostname       string
 #   Cloudflare Published application 的 Hostname，必须与 Dashboard 中完全一致，

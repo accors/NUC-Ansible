@@ -203,7 +203,9 @@
   timer 都保持预期状态。
 - [ ] 实际断电再上电后，BIOS 自动开机；Debian、网络和受控服务恢复。
 - [ ] LAN 与 Tailscale SSH 均能使用公钥；root/密码登录保持关闭。
-- [ ] `ss -lntp` 显示 Paseo 只监听 Tailscale IPv4；relay 关闭。
+- [ ] `ss -lntp` 显示 Paseo 监听 `0.0.0.0:6767`（这是预期结果）；relay 关闭。
+- [ ] `ufw status verbose` 里那条拒绝 LAN 访问 6767 的规则存在——它是该端口在
+  LAN 侧唯一的隔离手段。
 - [ ] 路由器和主机没有公网入站端口，外部访问必须经过 Cloudflare Access；MFA 与
   Allow policy 生效且没有 Bypass。
 - [ ] Docker `daemon.json` 保留已有键，并启用 `json-file` 的 `10m`/`3` 日志轮转。
