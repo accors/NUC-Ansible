@@ -1,5 +1,10 @@
 ---
 # ops_agent 只重述共享契约中本 role 使用的变量。
+# 默认不启用：ops_agent 会把 journal 内容作为 tool result 送进模型上下文，
+# 是本项目唯一一个把系统日志送出本机的组件。site.yml 以此变量为门禁，
+# 未显式置 true 时整个 role 不执行，不安装、不建账号、不启服务。
+nuc_ops_agent_enabled: false
+
 nuc_ops_agent_user: solar
 nuc_ops_agent_home: /home/solar
 nuc_ops_agent_workspace: /var/lib/openclaw-ops-agent/workspace

@@ -165,6 +165,8 @@ nuc_agent_runner_schedule: "*-*-* 07:30:00 Australia/Melbourne"
 nuc_agent_runner_randomized_delay: 10m
 nuc_agent_runner_timer_enabled: false
 
+# 人工门禁：未显式置 true 时 site.yml 跳过整个 ops_agent role。
+nuc_ops_agent_enabled: false
 nuc_ops_agent_user: solar
 nuc_ops_agent_home: /home/solar
 nuc_ops_agent_workspace: /var/lib/openclaw-ops-agent/workspace

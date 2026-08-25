@@ -33,9 +33,12 @@
     - role: agent_runner
       tags:
         - agent_runner
+    # ops_agent 是唯一会把系统 journal 内容送进模型上下文的组件，默认不启用。
+    # 只有显式把 nuc_ops_agent_enabled 设为 true 才会安装并启动。
     - role: ops_agent
       tags:
         - ops_agent
+      when: nuc_ops_agent_enabled | bool
     - role: restic
       tags:
         - restic
