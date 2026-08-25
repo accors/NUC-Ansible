@@ -2,3 +2,5 @@
 # cloudflared 只重述共享契约中的本 role 变量。
 nuc_cloudflared_package_version: ""
 nuc_cloudflared_enable_service: true
+nuc_cloudflared_config_dir: /etc/cloudflared
+nuc_cloudflared_token_path: /etc/cloudflared/token

@@ -84,22 +84,45 @@
     - nuc_cloudflared_enable_service | bool
     - _cloudflared_token_configured | default(false) | bool
 
-- name: 在本机幂等安装 cloudflared systemd service
-  ansible.builtin.command:
-    argv:
-      - /usr/bin/cloudflared
-      - service
-      - install
-      - "{{ vault_nuc_cloudflared_tunnel_token }}"
-    creates: /etc/systemd/system/cloudflared.service
-  register: _cloudflared_service_install
+# 不使用 `cloudflared service install`：那条命令必须带 creates: 守卫才幂等，
+# 而 creates: 会让 unit 存在之后永不重跑，vault 里轮换 token 后本机不会收敛。
+# 改由 Ansible 直接管理 token 文件与 unit，两者都是 template/copy，天然收敛。
+- name: 创建 cloudflared 配置目录
+  ansible.builtin.file:
+    path: "{{ nuc_cloudflared_config_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
   when:
     - nuc_cloudflared_enable_service | bool
     - _cloudflared_token_configured | default(false) | bool
-    # fresh-host check mode 不得调用本轮尚未安装的 cloudflared。
-    - not ansible_check_mode or _cloudflared_service_unit.stat.exists
+
+# 不写结尾换行：--token-file 是否 trim 未经验证，多一个字节就可能让 token 失效。
+- name: 写入 root-only 的 tunnel token 文件
+  ansible.builtin.copy:
+    content: "{{ vault_nuc_cloudflared_tunnel_token }}"
+    dest: "{{ nuc_cloudflared_token_path }}"
+    owner: root
+    group: root
+    mode: "0600"
+  when:
+    - nuc_cloudflared_enable_service | bool
+    - _cloudflared_token_configured | default(false) | bool
   notify: "cloudflared | restart cloudflared"
   no_log: true
+
+- name: 写入由 Ansible 管理的 cloudflared systemd unit
+  ansible.builtin.template:
+    src: cloudflared.service.j2
+    dest: /etc/systemd/system/cloudflared.service
+    owner: root
+    group: root
+    mode: "0644"
+  when:
+    - nuc_cloudflared_enable_service | bool
+    - _cloudflared_token_configured | default(false) | bool
+  notify: "cloudflared | restart cloudflared"
 
 - name: 启用并启动 cloudflared service
   ansible.builtin.systemd_service:

@@ -69,6 +69,8 @@ PDF v1.4 只明确固定 Debian 13.6 与 Node.js 22 LTS。其余软件没有给�
 | `nuc_paseo_password_configured` | boolean | `false` | 8.5、8.6 | 人工执行 `set-password` 后改为 `true`，才允许启用 user unit |
 | `nuc_cloudflared_package_version` | string | `""` | 10.3 | 空值表示 Cloudflare 仓库当前候选 |
 | `nuc_cloudflared_enable_service` | boolean | `true` | 10.4 | Dashboard 已建 tunnel 且 vault token 已填后安装/启用 service |
+| `nuc_cloudflared_config_dir` | path | `/etc/cloudflared` | 10.4 | token 文件所在目录，`0700 root:root` |
+| `nuc_cloudflared_token_path` | path | `/etc/cloudflared/token` | 10.4 | tunnel token 文件，`0600 root:root`；unit 以 `--token-file` 读取 |
 | `nuc_restic_package_version` | string | `""` | 6.1、12.2 | 空值表示 Debian 13.6 当前候选 |
 
 ### 2.4 agent-runner 与 Restic
@@ -155,6 +157,9 @@ nuc_restic_excludes:
 | `/etc/credstore.encrypted` | `root:root` | `0700` | systemd 加密凭据目录；只创建目录 | `agent_runner` |
 | `/etc/restic` | `root:root` | `0700` | Restic 配置目录 | `restic` |
 | `/etc/restic/agent-nuc.env` | `root:root` | `0600` | 仓库地址与密码环境文件 | `restic` |
+| `/etc/cloudflared` | `root:root` | `0700` | cloudflared token 目录 | `cloudflared` |
+| `/etc/cloudflared/token` | `root:root` | `0600` | tunnel token；`no_log` 写入，不进 unit 文本与 cmdline | `cloudflared` |
+| `/etc/systemd/system/cloudflared.service` | `root:root` | `0644` | 由 Ansible 管理，非 `cloudflared service install` 生成 | `cloudflared` |
 | `/usr/local/sbin/agent-restic-backup` | `root:root` | `0750` | nightly 包装脚本 | `restic` |
 
 ## 4. Handler 命名表
@@ -204,6 +209,7 @@ role tag 与目录名完全相同，`site.yml` 只按下列顺序表达依赖，
 - 优先使用模块，禁止用 `shell`/`command` 代替 `apt`、`file`、`template`、`service`、`user`、`authorized_key` 等已有模块。
 - 所有下载使用 TLS、固定官方来源，并通过 `get_url`/APT keyring 管理；不得使用 `curl | sh`。若 PDF 只展示安装脚本，role 应展开为可审计的下载与条件执行。
 - 秘密不得进入 task 名、日志、模板 diff 或命令输出；涉及 vault token/password 的 task 必须 `no_log: true`。不得提交真实密码、token、密钥、公钥指纹。
+- `cloudflared` 不得使用 `cloudflared service install`：该命令需要 `creates:` 才幂等，而 `creates:` 会让 unit 存在后永不重跑，vault 中轮换 token 后本机不再收敛。token 文件与 unit 一律由 Ansible 的 `copy`/`template` 管理，二者都 `notify` 重启；token 只走 `--token-file`，不得进入 `ExecStart` 文本或命令行。
 - `docker` 必须读取并递归合并现有 `/etc/docker/daemon.json`，保留契约外已有键；不得整体覆盖。
 - `ssh_harden` 必须先落地 `authorized_keys`，再写 `10-hardening.conf`；写配置的任务必须带 `validate: /usr/sbin/sshd -t -f %s`。
 - UFW 必须含 LAN SSH 规则、`tailscale0` 上的 22/6767，以及一条显式拒绝 `nuc_lan_cidr` 访问 `nuc_paseo_port` 的规则；接口未出现不影响先写规则。

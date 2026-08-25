@@ -108,6 +108,12 @@
   启用身份提供方 MFA；不得创建 Bypass policy。
 - [ ] 把 service token 只写入加密 `group_vars/all/vault.yml` 的
   `vault_nuc_cloudflared_tunnel_token`，然后运行 `--tags cloudflared`。
+- [ ] **轮换 token 时同样只改 Vault 再重跑 `--tags cloudflared`。** token 文件与 unit
+  都由 Ansible 管理，会收敛并触发重启。核对 `sudo stat -c '%a %U:%G'
+  /etc/cloudflared/token` 为 `600 root:root`，且 token 没有出现在
+  `/etc/systemd/system/cloudflared.service` 里。
+  轮换后旧 token 建不了新连接，但**已建立的 connector 会继续运行到重启**——
+  所以不重启就看不出是否真的换成功了，必须确认 handler 触发了重启。
 - [ ] 检查 `systemctl status cloudflared --no-pager` 和 tunnel health；从未登录浏览器访问
   hostname 应先进入 Cloudflare Access，从允许身份登录后才到 Paseo。
 - [ ] 确认路由器没有给 NUC 配置公网端口转发。

@@ -1,0 +1,23 @@
+{#
+  本 unit 由 Ansible 管理，不再使用 `cloudflared service install`。
+  原因：那条命令带 creates: 守卫，unit 一旦存在就永不重跑，vault 里换了 token
+  也不会收敛到本机——而故障要到下一次重启或掉线才显现（旧 token 建不了新连接，
+  已建立的 connector 会继续跑），届时重跑 playbook 也修不好。
+
+  token 走 --token-file 而非 --token：不进 ExecStart 文本，不进 /proc/<pid>/cmdline。
+  Type 用 simple 而非 notify：cloudflared 是否发送 sd_notify 未经本项目验证，
+  猜错会让 systemd 一直等到超时。
+#}
+[Unit]
+Description=cloudflared tunnel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/cloudflared --no-autoupdate tunnel run --token-file {{ nuc_cloudflared_token_path }}
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
