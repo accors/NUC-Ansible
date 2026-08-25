@@ -43,6 +43,12 @@
 - [ ] 运行 `--tags ssh_harden`，再从第三个新会话验证公钥登录。确认密码登录、root 登录
   均已关闭后才结束旧会话。
 - [ ] 运行 `--tags srv_layout,docker`，检查 `/srv` 权限矩阵和 Docker 日志轮转配置。
+- [ ] 检查 `/etc/docker/daemon.json` 里 `ip` 与
+  `default-network-opts.bridge.com.docker.network.bridge.host_binding_ipv4`
+  都是 `127.0.0.1`，且原有的契约外键没有丢失。
+  **这只是默认值**：将来 compose 里写 `0.0.0.0:8080:80` 依然会覆盖它，而且
+  UFW 拦不住——Docker 的 DNAT 发生在 UFW 规则之前。部署第一个 stack 之前
+  要先定规矩：compose 一律显式写 `127.0.0.1:`，需要远程访问时再单独审。
 
 ## C. Codex、Tailscale 与 Paseo
 

@@ -93,7 +93,13 @@
       /etc/docker/daemon.json 必须是 JSON 对象，且 log-opts（若存在）必须是对象；
       为避免丢失现有设置，未写入合并结果。
 
-- name: 递归合并 Docker 日志轮转配置并保留已有键
+# 发布端口的流量在到达 UFW 的 INPUT 规则之前就被 DNAT 转发，因此 UFW 挡不住
+# `docker run -p`。这里把默认宿主绑定地址收到 loopback：
+#   ip                                                → 默认 bridge 网络
+#   default-network-opts.bridge.host_binding_ipv4     → Compose 建的用户定义 bridge
+# 两个键都只是**默认值**：compose 里显式写 0.0.0.0:8080:80 仍会覆盖它们。
+# 要做成强制边界得写 DOCKER-USER 链规则，那是部署第一个 stack 时的事。
+- name: 递归合并 Docker 日志轮转与默认端口绑定并保留已有键
   ansible.builtin.set_fact:
     _docker_merged_daemon: >-
       {{
@@ -104,6 +110,13 @@
               'log-opts': {
                 'max-size': nuc_docker_log_max_size | string,
                 'max-file': nuc_docker_log_max_file | string
+              },
+              'ip': nuc_docker_default_host_binding,
+              'default-network-opts': {
+                'bridge': {
+                  'com.docker.network.bridge.host_binding_ipv4':
+                    nuc_docker_default_host_binding
+                }
               }
             },
             recursive=true

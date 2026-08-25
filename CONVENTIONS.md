@@ -57,6 +57,7 @@ PDF v1.4 只明确固定 Debian 13.6 与 Node.js 22 LTS。其余软件没有给�
 | `nuc_docker_package_versions` | dict[string,string] | 五个 Docker 包均为 `""` | 9.2 | 空值表示 Docker stable 当前候选；非空时按 `包=版本` 安装 |
 | `nuc_docker_log_max_size` | string | `10m` | 9.3 | 合并进现有 `daemon.json` |
 | `nuc_docker_log_max_file` | string | `3` | 9.3 | Docker 要求字符串值 |
+| `nuc_docker_default_host_binding` | string | `127.0.0.1` | 任务补充、9.3 | 发布容器端口的默认宿主绑定地址；同时写入 `ip` 与 `default-network-opts.bridge.com.docker.network.bridge.host_binding_ipv4` |
 | `nuc_codex_installer_url` | string | `https://chatgpt.com/codex/install.sh` | 8.1 | 管理员账户的官方安装脚本 |
 | `nuc_codex_admin_version` | string | `latest` | 8.1 | 官方脚本通道 pin；安装后必须记录实际版本与路径 |
 | `nuc_codex_system_version` | string | `latest` | 11.3 | `/usr/local` 下 `@openai/codex` 的 npm 版本 pin |
@@ -213,6 +214,7 @@ role tag 与目录名完全相同，`site.yml` 只按下列顺序表达依赖，
 - `restic` 的仓库存在性判定必须用 `restic cat config` 的退出码（10 = 仓库不存在，12 = 密码错误），不得匹配英文错误文本——文本随版本与 locale 变化。因此 role 必须先断言 restic ≥ 0.17.1，否则判定会静默失效。
 - `cloudflared` 不得使用 `cloudflared service install`：该命令需要 `creates:` 才幂等，而 `creates:` 会让 unit 存在后永不重跑，vault 中轮换 token 后本机不再收敛。token 文件与 unit 一律由 Ansible 的 `copy`/`template` 管理，二者都 `notify` 重启；token 只走 `--token-file`，不得进入 `ExecStart` 文本或命令行。
 - `docker` 必须读取并递归合并现有 `/etc/docker/daemon.json`，保留契约外已有键；不得整体覆盖。
+- 已发布容器端口的流量在到达 UFW 的 INPUT 规则前就被 DNAT 转发，UFW 挡不住 `docker run -p`。`daemon.json` 必须同时设置 `ip`（默认 bridge）与 `default-network-opts.bridge.com.docker.network.bridge.host_binding_ipv4`（Compose 建的用户定义 bridge），只设其一覆盖不全。二者都是**默认值**，compose 中显式写 host IP 仍可覆盖；强制边界需要 `DOCKER-USER` 链规则，留待部署第一个 stack 时决定。
 - `ssh_harden` 必须先落地 `authorized_keys`，再写 `10-hardening.conf`；写配置的任务必须带 `validate: /usr/sbin/sshd -t -f %s`。
 - UFW 必须含 LAN SSH 规则、`tailscale0` 上的 22/6767，以及一条显式拒绝 `nuc_lan_cidr` 访问 `nuc_paseo_port` 的规则；接口未出现不影响先写规则。
 - Paseo `config.json` 是唯一配置来源；unit 的 `ExecStart` 除 `daemon start --foreground` 外不得传配置参数。`daemon.listen` 固定 `0.0.0.0:<port>`，不绑定 `tailscale0` 地址——绑定会让 daemon 依赖 tailscaled 存活，把 Cloudflare Access 那条路径一并拖下水；unit 中也不得再加等待 tailscale 接口的 `ExecStartPre`。

@@ -12,3 +12,6 @@ nuc_docker_package_versions:
 
 nuc_docker_log_max_size: "10m"
 nuc_docker_log_max_file: "3"
+# 发布容器端口时的默认宿主绑定地址。UFW 挡不住 Docker 的 DNAT，
+# 这是第一道默认防线（不是强制边界，显式 host IP 仍可覆盖）。
+nuc_docker_default_host_binding: "127.0.0.1"
