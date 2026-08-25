@@ -30,6 +30,11 @@
 ### B1. `base` 前后
 
 - [ ] 运行 `--tags base`。
+- [ ] 检查主机名：`hostnamectl --static` 等于 `nuc_hostname`，且 `/etc/hosts` 里
+  `127.0.1.1` 那行指向同一个名字。**两者不一致时 sudo 会反复报
+  `unable to resolve host`**，而那时你可能已经在跑 ssh_harden 了。
+  注意主机名会出现在 SSH 提示符、journald 日志和 Tailscale 设备名里；
+  Tailscale 侧的设备名会被转成小写。
 - [ ] 检查 `sudo ufw status verbose`：默认拒绝入站；LAN CIDR 只允许 TCP/22；
   `tailscale0` 允许 TCP/22 和 TCP/6767；另有一条显式 `DENY IN` 挡住
   LAN CIDR 访问 TCP/6767。

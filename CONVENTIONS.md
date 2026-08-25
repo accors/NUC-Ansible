@@ -13,12 +13,13 @@
 
 所有非秘密变量使用 `nuc_` 前缀；秘密使用 `vault_nuc_` 前缀。下表列出允许写入 `group_vars/all/main.yml` 的完整变量集合。role 的 `defaults/main.yml` 只能重述自己使用的这些变量，默认值必须一致。
 
-其中六项是环境相关值：`nuc_admin_user`、`nuc_admin_authorized_keys`、`nuc_lan_cidr`、`nuc_tailscale_ipv4`、`nuc_access_hostname`、`nuc_restic_repository`。它们不写入提交进仓库的 `main.yml`，改由不提交的 `group_vars/all/local.yml` 提供（模板 `local.example.yml` 只含占位符），因此下表中它们的「默认值」列记为 `local.yml`，`main.yml` 与 role 的 `defaults/main.yml` 都不为其设默认值。变量名、类型与语义不受影响。
+其中七项是环境相关值：`nuc_hostname`、`nuc_admin_user`、`nuc_admin_authorized_keys`、`nuc_lan_cidr`、`nuc_tailscale_ipv4`、`nuc_access_hostname`、`nuc_restic_repository`。它们不写入提交进仓库的 `main.yml`，改由不提交的 `group_vars/all/local.yml` 提供（模板 `local.example.yml` 只含占位符），因此下表中它们的「默认值」列记为 `local.yml`，`main.yml` 与 role 的 `defaults/main.yml` 都不为其设默认值。变量名、类型与语义不受影响。
 
 ### 2.1 主机、账号与网络
 
 | 变量 | 类型 | 默认值 | 来源 | 说明 |
 |---|---|---|---|---|
+| `nuc_hostname` | string | `local.yml` | 任务补充 | 目标机系统主机名；`base` 写入 `/etc/hostname` 与 `/etc/hosts` 的 `127.0.1.1`，设置前必须校验为合法 RFC 1123 标签 |
 | `nuc_admin_user` | string | `local.yml` | 5、7.1、8.3 | 已由 Debian 安装器创建的个人管理员；Paseo 与交互式 Codex 使用此账号 |
 | `nuc_admin_authorized_keys` | list[string] | `local.yml` | 7.1 | 至少一把公钥；为空时 `ssh_harden` 必须在关闭密码认证前失败 |
 | `nuc_lan_cidr` | string | `local.yml` | 7.2 | 用 `ip route` 实测；只允许该网段访问 SSH |
@@ -180,6 +181,8 @@ nuc_restic_excludes:
 | `/etc/sudoers.d/90-ops-agent-smart` | `root:root` | `0440` | 仅两条固定设备、固定参数 SMART 命令 | `ops_agent` |
 | `/etc/restic` | `root:root` | `0700` | Restic 配置目录 | `restic` |
 | `/etc/restic/agent-nuc.env` | `root:root` | `0600` | 仓库地址与密码环境文件 | `restic` |
+| `/etc/hostname` | `root:root` | `0644` | 系统主机名 | `base` |
+| `/etc/hosts` | `root:root` | `0644` | 只维护 `127.0.1.1` 一行，其余保留 | `base` |
 | `/etc/cloudflared` | `root:root` | `0700` | cloudflared token 目录 | `cloudflared` |
 | `/etc/cloudflared/token` | `root:root` | `0600` | tunnel token；`no_log` 写入，不进 unit 文本与 cmdline | `cloudflared` |
 | `/etc/systemd/system/cloudflared.service` | `root:root` | `0644` | 由 Ansible 管理，非 `cloudflared service install` 生成 | `cloudflared` |

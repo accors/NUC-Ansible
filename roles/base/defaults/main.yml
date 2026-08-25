@@ -26,7 +26,8 @@ nuc_sleep_targets:
 nuc_unattended_upgrades_auto_reboot: false
 nuc_journald_system_max_use: 1G
 nuc_nvme_device: /dev/nvme0
-# nuc_lan_cidr 是环境相关值，由不提交的 group_vars/all/local.yml 提供，此处不设默认值。
+# nuc_hostname 与 nuc_lan_cidr 都是环境相关值，由不提交的
+# group_vars/all/local.yml 提供，此处不设默认值。
 nuc_ufw_lan_ssh_port: 22
 nuc_paseo_port: 6767
 nuc_ufw_tailscale_ports:

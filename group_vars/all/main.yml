@@ -24,6 +24,11 @@
 #   家庭 LAN 网段，在 NUC 上用 `ip route` 实测得到。UFW 只允许该网段访问 SSH，
 #   填错会在 `--tags base` 启用 UFW 时阻断 SSH。（CONVENTIONS 2.1、PDF 7.2）
 #
+# nuc_hostname              string
+#   目标机的系统主机名，由 base role 写入 /etc/hostname 与 /etc/hosts 的 127.0.1.1。
+#   必须是合法 RFC 1123 标签；base 在设置前先校验，格式非法即失败——写坏之后 sudo
+#   会反复报 unable to resolve host，且需要控制台才能修回来。（CONVENTIONS 2.1）
+#
 # nuc_tailscale_ipv4        string
 #   人工执行 `sudo tailscale up` 授权后，用 `tailscale ip -4` 实测得到的唯一地址。
 #   必须属于 100.64.0.0/10；tailscale role 会与实测值比对，不一致即失败。

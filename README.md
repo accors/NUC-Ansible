@@ -39,7 +39,7 @@ cp files/preseed.example.cfg files/preseed.cfg
 
 | 文件 | 填什么 |
 |---|---|
-| `group_vars/all/local.yml` | `nuc_admin_user`、`nuc_admin_authorized_keys`、`nuc_lan_cidr`、`nuc_tailscale_ipv4`、`nuc_access_hostname`、`nuc_restic_repository` |
+| `group_vars/all/local.yml` | `nuc_hostname`、`nuc_admin_user`、`nuc_admin_authorized_keys`、`nuc_lan_cidr`、`nuc_tailscale_ipv4`、`nuc_access_hostname`、`nuc_restic_repository` |
 | `group_vars/all/vault.yml` | `vault_nuc_restic_password`、`vault_nuc_cloudflared_tunnel_token`、`vault_nuc_ops_agent_gateway_token` |
 | `inventory.yml` | NUC 的 LAN 地址与 `ansible_user` |
 | `files/preseed.cfg` | 管理员用户名、密码哈希、SSH 公钥 |

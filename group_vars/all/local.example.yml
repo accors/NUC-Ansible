@@ -7,6 +7,10 @@
 # 每一项的用途、来源命令与约束见 group_vars/all/main.yml 顶部的注释。
 
 # Debian 安装器创建的管理员账号，需与 inventory.yml 的 ansible_user 一致。
+# 目标机的系统主机名。RFC 1123 标签：字母、数字、连字符，不以连字符开头或结尾，
+# 长度不超过 63。会出现在 SSH 提示符、journald 日志与 Tailscale 设备名里。
+nuc_hostname: CHANGE_ME
+
 nuc_admin_user: CHANGE_ME
 
 # 管理员登录公钥，至少一把，整行照抄 .pub 文件内容。

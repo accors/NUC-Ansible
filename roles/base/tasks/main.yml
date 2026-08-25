@@ -12,6 +12,36 @@
       base 的第一阶段边界无效：自动重启必须为 false，且
       nuc_ufw_tailscale_ports 必须严格为 [22, nuc_paseo_port]。
 
+# --- 主机名 ---
+# 校验放在设置之前：hostname 写坏会让 sudo 每次报 unable to resolve host，
+# 且需要控制台才能修回来。
+- name: 校验主机名格式
+  ansible.builtin.assert:
+    that:
+      - (nuc_hostname | default('') | string | trim | length) > 0
+      - (nuc_hostname | string | trim | upper) != 'CHANGE_ME'
+      - (nuc_hostname | string | trim) is match('^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$')
+    fail_msg: >-
+      nuc_hostname 未设置或不是合法的 RFC 1123 主机名标签。请在不提交的
+      group_vars/all/local.yml 中填入真实主机名：只能含字母、数字和连字符，
+      不得以连字符开头或结尾，长度不超过 63。
+
+- name: 设置主机名
+  ansible.builtin.hostname:
+    name: "{{ nuc_hostname | trim }}"
+
+# ansible.builtin.hostname 只写 /etc/hostname 与 hostnamectl，不碰 /etc/hosts。
+# Debian 约定用 127.0.1.1 解析本机名；缺这一行时 sudo 会反复报
+# 「unable to resolve host」。
+- name: 维护 /etc/hosts 中的 127.0.1.1 本机名解析
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '^127\.0\.1\.1\s'
+    line: "127.0.1.1\t{{ nuc_hostname | trim }}"
+    owner: root
+    group: root
+    mode: "0644"
+
 - name: 更新 APT 缓存（PDF 6.1）
   ansible.builtin.apt:
     update_cache: true
