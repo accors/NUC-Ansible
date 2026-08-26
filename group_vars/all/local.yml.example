@@ -1,7 +1,7 @@
 ---
 # group_vars/all/local.yml 的模板。复制为 local.yml 后填入真实值：
 #
-#   cp group_vars/all/local.example.yml group_vars/all/local.yml
+#   cp group_vars/all/local.yml.example group_vars/all/local.yml
 #
 # local.yml 不提交进 Git（见 .gitignore）。此处所有值都是占位符，不是可用配置。
 # 每一项的用途、来源命令与约束见 group_vars/all/main.yml 顶部的注释。

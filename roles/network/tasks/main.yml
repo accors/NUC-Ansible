@@ -17,7 +17,7 @@
       - nuc_lan_cidr is defined
     fail_msg: >-
       nuc_static_ipv4、nuc_lan_gateway、nuc_lan_dns 由 group_vars/all/local.yml 提供，
-      模板见 local.example.yml。
+      模板见 local.yml.example。
     quiet: true
 
 # 掩码长度只从 nuc_lan_cidr 推导，不单独设变量：UFW 规则用的是同一个 CIDR，

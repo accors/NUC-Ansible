@@ -27,8 +27,8 @@ python3.12 -m venv .venv
 账号、秘密相关的值都在不提交的本机文件里。克隆之后先生成这四个文件：
 
 ```bash
-cp group_vars/all/local.example.yml group_vars/all/local.yml
-cp group_vars/all/vault.example.yml group_vars/all/vault.yml
+cp group_vars/all/local.yml.example group_vars/all/local.yml
+cp group_vars/all/vault.yml.example group_vars/all/vault.yml
 cp inventory.example.yml inventory.yml
 cp files/preseed.example.cfg files/preseed.cfg
 # 填入各自的真实值，然后

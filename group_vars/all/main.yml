@@ -3,7 +3,7 @@
 #
 # 环境相关的值（管理员账号、公钥、LAN 网段、Tailscale 地址、Access 域名）
 # 不在此文件中，由不提交的 group_vars/all/local.yml 提供；模板见
-# group_vars/all/local.example.yml。Ansible 按字母序加载 group_vars/all/ 下的
+# group_vars/all/local.yml.example。Ansible 按字母序加载 group_vars/all/ 下的
 # 所有 yml 且后者覆盖前者，local 排在 main 之后，因此无需额外配置。
 #
 # 变量清单与来源章节以 CONVENTIONS.md 第 2 节为准。

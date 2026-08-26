@@ -13,7 +13,7 @@
 
 所有非秘密变量使用 `nuc_` 前缀；秘密使用 `vault_nuc_` 前缀。下表列出允许写入 `group_vars/all/main.yml` 的完整变量集合。role 的 `defaults/main.yml` 只能重述自己使用的这些变量，默认值必须一致。
 
-其中十项是环境相关值：`nuc_hostname`、`nuc_admin_user`、`nuc_admin_authorized_keys`、`nuc_lan_cidr`、`nuc_static_ipv4`、`nuc_lan_gateway`、`nuc_lan_dns`、`nuc_tailscale_ipv4`、`nuc_access_hostname`、`nuc_restic_repository`。它们不写入提交进仓库的 `main.yml`，改由不提交的 `group_vars/all/local.yml` 提供（模板 `local.example.yml` 只含占位符），因此下表中它们的「默认值」列记为 `local.yml`，`main.yml` 与 role 的 `defaults/main.yml` 都不为其设默认值。变量名、类型与语义不受影响。
+其中十项是环境相关值：`nuc_hostname`、`nuc_admin_user`、`nuc_admin_authorized_keys`、`nuc_lan_cidr`、`nuc_static_ipv4`、`nuc_lan_gateway`、`nuc_lan_dns`、`nuc_tailscale_ipv4`、`nuc_access_hostname`、`nuc_restic_repository`。它们不写入提交进仓库的 `main.yml`，改由不提交的 `group_vars/all/local.yml` 提供（模板 `local.yml.example` 只含占位符），因此下表中它们的「默认值」列记为 `local.yml`，`main.yml` 与 role 的 `defaults/main.yml` 都不为其设默认值。变量名、类型与语义不受影响。
 
 ### 2.1 主机、账号与网络
 
@@ -127,7 +127,9 @@ nuc_restic_excludes:
 
 ### 2.5 Vault 变量
 
-`group_vars/all/vault.example.yml` 只提交占位符；真实的 `vault.yml` 必须经 `ansible-vault` 加密并由 `.gitignore` 排除。同样地，`inventory.yml` 与 `files/preseed.cfg` 只提交 `.example` 模板，真实文件由 `.gitignore` 排除。
+`group_vars/all/vault.yml.example` 只提交占位符；真实的 `vault.yml` 必须经 `ansible-vault` 加密并由 `.gitignore` 排除。同样地，`inventory.yml` 与 `files/preseed.cfg` 只提交 `.example` 模板，真实文件由 `.gitignore` 排除。
+
+**模板文件的扩展名必须是 `.yml.example`，不得改成 `.example.yml`**：`group_vars/all/` 下扩展名落在 `YAML_FILENAME_EXTENSIONS`（默认 `['.yml', '.yaml', '.json']`）内的文件**全部会被 Ansible 加载**，模板也不例外。`local.example.yml` 这种命名会被当成真正的变量文件读进来，且字母序排在 `local.yml` 之前——真实文件覆盖它，看起来没问题，但**真实文件里漏填的项会静默落到模板的占位值上，而不是报 undefined variable**。已实测踩中：`vault.yml` 少写 `vault_nuc_ops_agent_gateway_token`，得到的不是失败而是安静的 `CHANGE_ME`。改成 `.yml.example` 后扩展名不在列表内，模板不再参与变量解析，漏填就会响亮地失败。
 
 **加载顺序陷阱（务必遵守）**：`group_vars/all/` 内的文件按**字母序**加载，后加载者覆盖先加载者。`local.yml` 排在 `main.yml` **之前**，因此 `main.yml` 会覆盖 `local.yml`。本机覆盖之所以成立，唯一原因是 `main.yml` 对这些变量**只写注释、不给定义**。一旦有人出于「补全文档」把某个本机变量在 `main.yml` 里赋了值，`local.yml` 就会静默失效，而现象是「我明明改了 local.yml 却没生效」，极难定位。安全兜底放在 role 的 `defaults/main.yml`（优先级最低），由 `local.yml` 覆盖。已实测确认：`main.yml` 定义时其值胜出；`main.yml` 不定义时 `local.yml` 胜过 role defaults。
 
