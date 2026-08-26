@@ -5,7 +5,7 @@
 ## 1. 适用范围与事实来源
 
 - 目标系统：全新 Debian 13.6 (`trixie`, `amd64`) 上的 ASUS NUC 13 Pro。
-- 第一阶段只部署 Debian 基础防护、SSH、Docker、Codex、Tailscale、Paseo、cloudflared、受限 agent-runner、只读 ops-agent 与 Restic。
+- 第一阶段只部署 Debian 基础防护、SSH、Docker、Codex、Tailscale、Paseo、cloudflared、受限 agent-runner、只读 ops 账号 `solar` 与 Restic。
 - 同一事项发生冲突时，优先级为：本契约的跨 role 接口 > PDF v1.4 的对应章节 > role 内部实现细节。
 - v1.4 章节映射：`base` 见 6.1、6.3、6.4、7.2、7.3、12.4、13.2；`ssh_harden` 见 7.1；`srv_layout` 见 9.1；`docker` 见 9.2、9.3；`codex` 见 8.1、11.3；`tailscale` 见 8.4、10.1、10.2；`paseo` 见 8.4-8.6；`cloudflared` 见 10.3-10.5；`agent_runner` 见 11.1-11.3；`ops_agent` 来自任务补充的观察者设计；`restic` 见 12.1-12.4。
 
@@ -30,8 +30,8 @@
 | `nuc_agent_runner_home` | path | `/var/lib/agent-runner` | 11.1、11.3 | agent-runner 的系统 home |
 | `nuc_agent_runner_workdir` | path | `/srv/automation` | 9.1、11.1、11.3 | 自动化工作目录；必须与 `/srv/workspaces` 平级 |
 | `nuc_agent_runner_codex_home` | path | `/var/lib/agent-runner/codex` | 11.1、11.3 | systemd unit 的独立 `CODEX_HOME` 与 OAuth 登录缓存目录 |
-| `nuc_ops_agent_user` | string | `ops-agent` | 任务补充 | 仅加入 `systemd-journal`，不得加入 `sudo`、`docker`、`disk` |
-| `nuc_ops_agent_home` | path | `/home/ops-agent` | 任务补充 | 独立账号 home，必须为 `0700` |
+| `nuc_ops_agent_user` | string | `solar` | 任务补充 | 仅加入 `systemd-journal`，不得加入 `sudo`、`docker`、`disk` |
+| `nuc_ops_agent_home` | path | `/home/solar` | 任务补充 | 独立账号 home，必须为 `0700` |
 | `nuc_ops_agent_workspace` | path | `/var/lib/openclaw-ops-agent/workspace` | 任务补充 | root 控制启动指令；只给 memory/reports 运行时写权限 |
 | `nuc_ops_agent_gateway_port` | integer | `18789` | OpenClaw 官方默认 | 只允许 loopback Gateway 使用，不加入 UFW 放行端口 |
 | `nuc_timezone` | string | `Australia/Melbourne` | 5、13.2 | timer 与主机使用的时区 |
@@ -175,16 +175,16 @@ nuc_restic_excludes:
 | 管理员 `~/.config/systemd/user` | 管理员 | `0755` | user unit 目录 | `paseo` |
 | `/var/lib/agent-runner` | agent-runner | `0750` | 受限账号 home | `agent_runner` |
 | `/var/lib/agent-runner/codex` | agent-runner | `0700` | `CODEX_HOME` 与 OAuth 登录缓存；不备份 | `agent_runner` |
-| `/home/ops-agent` | `ops-agent:ops-agent` | `0700` | ops 独立 home | `ops_agent` |
-| `/home/ops-agent/.openclaw` | `ops-agent:ops-agent` | `0700` | OpenClaw 可变 state 与认证资料 | `ops_agent` |
-| `/var/lib/openclaw-ops-agent/workspace` | `root:ops-agent` | `0750` | root 控制的 ops 工作区根 | `ops_agent` |
-| `/var/lib/openclaw-ops-agent/workspace/AGENTS.md` | `root:ops-agent` | `0640` | 每会话加载的不可变运行规则 | `ops_agent` |
-| `/var/lib/openclaw-ops-agent/workspace/policy.jsonc` | `root:ops-agent` | `0640` | OpenClaw conformance policy | `ops_agent` |
-| `/var/lib/openclaw-ops-agent/workspace/MEMORY.md` | `ops-agent:ops-agent` | `0600` | 跨会话长期趋势 | `ops_agent` |
-| `/var/lib/openclaw-ops-agent/workspace/{memory,reports}` | `ops-agent:ops-agent` | `0700` | 每日记忆与巡检报告 | `ops_agent` |
-| `/etc/openclaw` | `root:ops-agent` | `0750` | ops config、token 与 approvals 导入文件目录 | `ops_agent` |
-| `/etc/openclaw/ops-agent.json` | `ops-agent:ops-agent` | `0600` | Ansible 管理的唯一 OpenClaw 配置 | `ops_agent` |
-| `/etc/openclaw/ops-agent-gateway-token` | `ops-agent:ops-agent` | `0600` | Gateway token file SecretRef 来源；OpenClaw 拒绝 group-readable token，systemd 运行态仍把 `/etc` 设为只读 | `ops_agent` |
+| `/home/solar` | `solar:solar` | `0700` | ops 独立 home | `ops_agent` |
+| `/home/solar/.openclaw` | `solar:solar` | `0700` | OpenClaw 可变 state 与认证资料 | `ops_agent` |
+| `/var/lib/openclaw-ops-agent/workspace` | `root:solar` | `0750` | root 控制的 ops 工作区根 | `ops_agent` |
+| `/var/lib/openclaw-ops-agent/workspace/AGENTS.md` | `root:solar` | `0640` | 每会话加载的不可变运行规则 | `ops_agent` |
+| `/var/lib/openclaw-ops-agent/workspace/policy.jsonc` | `root:solar` | `0640` | OpenClaw conformance policy | `ops_agent` |
+| `/var/lib/openclaw-ops-agent/workspace/MEMORY.md` | `solar:solar` | `0600` | 跨会话长期趋势 | `ops_agent` |
+| `/var/lib/openclaw-ops-agent/workspace/{memory,reports}` | `solar:solar` | `0700` | 每日记忆与巡检报告 | `ops_agent` |
+| `/etc/openclaw` | `root:solar` | `0750` | ops config、token 与 approvals 导入文件目录 | `ops_agent` |
+| `/etc/openclaw/ops-agent.json` | `solar:solar` | `0600` | Ansible 管理的唯一 OpenClaw 配置 | `ops_agent` |
+| `/etc/openclaw/ops-agent-gateway-token` | `solar:solar` | `0600` | Gateway token file SecretRef 来源；OpenClaw 拒绝 group-readable token，systemd 运行态仍把 `/etc` 设为只读 | `ops_agent` |
 | `/etc/sudoers.d/90-ops-agent-smart` | `root:root` | `0440` | 仅两条固定设备、固定参数 SMART 命令 | `ops_agent` |
 | `/etc/restic` | `root:root` | `0700` | Restic 配置目录 | `restic` |
 | `/etc/restic/agent-nuc.env` | `root:root` | `0600` | 仓库地址与密码环境文件 | `restic` |
@@ -268,7 +268,7 @@ role tag 与目录名完全相同，`site.yml` 只按下列顺序表达依赖，
 - agent-runner 不得加入 `sudo`、`docker` 或其他特权组，不得获得 Docker socket。
 - `ssh_harden` 在 `exclusive: true` 写入前必须读取现有 `authorized_keys`，按每行前两段（类型 + key 主体）比较；发现移除项时必须在任何文件变更前失败，只有 `-e nuc_confirm_key_removal=true` 才能继续。
 - `paseo` role 开头必须断言 `nuc_codex_admin_bin`、`nuc_codex_admin_bin_dir`、`nuc_tailscale_detected_ipv4` 都由本次 play 产生；缺失时提示使用 `--tags codex,tailscale,paseo`。
-- ops-agent 的附加组必须精确为 `systemd-journal`，不得属于 `sudo`、`docker`、`disk`；SMART 只能走 `/etc/sudoers.d/90-ops-agent-smart` 中设备和参数均写死的两条命令。
+- OpenClaw 运行账号 `solar` 的附加组必须精确为 `systemd-journal`，不得属于 `sudo`、`docker`、`disk`；SMART 只能走 `/etc/sudoers.d/90-ops-agent-smart` 中设备和参数均写死的两条命令。
 - ops Gateway 必须保持 `bind=loopback`、token file SecretRef、无 channel/webhook/mDNS、`tools.elevated.enabled=false`、`allowRealIpFallback=false`，且不得启用 Docker/browser sandbox 或 Skill Workshop。OpenAI provider 只允许 ChatGPT/Codex OAuth profile，systemd unit 必须清除 OpenAI key 环境变量；模型必须显式走 OpenClaw 原生 runtime，不启用 Codex plugin。`tools.exec.mode=ask` 只表达请求策略；SQLite host approvals 必须同时是 per-agent allowlist、`askFallback=deny`、`autoAllowSkills=false`。
 - ops 的 `AGENTS.md` 与 policy 必须 root-owned；systemd 用 `ProtectSystem=strict` 把 Ansible 配置设为运行态只读。只允许 state、`MEMORY.md`、`memory/`、`reports/` 写入。
 
