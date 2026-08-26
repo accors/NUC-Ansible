@@ -42,10 +42,72 @@
     group: root
     mode: "0644"
 
+# --- APT 源 ---
+# 必须排在任何 apt 操作之前。完整 DVD 离线安装会在装完后注释掉 cdrom 源，
+# 若安装时跳过了网络镜像，系统里一个可用源都不剩，apt 连 curl 都找不到候选。
+- name: 写入 Debian 官方 APT 源（deb822）
+  ansible.builtin.template:
+    src: debian.sources.j2
+    dest: /etc/apt/sources.list.d/debian.sources
+    owner: root
+    group: root
+    mode: "0644"
+  register: _base_debian_sources
+
+# 源刚变过就强制刷新一次，不受 cache_valid_time 影响。单列一个 task 而不是在
+# cache_valid_time 里写行内三元：模板渲染出来的是字符串，再交给 int 型参数是
+# 一层没必要的隐式转换，出问题时也看不出来。
+# noqa: no-handler —— 规则建议改用 handler，但 handler 在 play 结束时才执行，
+# 而这里必须在 full-upgrade 与装包之前刷新，顺序正好相反，不能采纳。
+- name: 源变更后强制刷新 APT 缓存  # noqa: no-handler
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 0
+  when: _base_debian_sources.changed
+
 - name: 更新 APT 缓存（PDF 6.1）
   ansible.builtin.apt:
     update_cache: true
     cache_valid_time: 3600
+
+# 已实测复现的坑：cache_valid_time 只比对 /var/lib/apt/lists 的**目录 mtime**，
+# 不看目录里有没有内容。空目录只要 mtime 够新（DVD 装机后正是如此），apt 模块
+# 就判定缓存有效、跳过 update 并报 ok，而列表自始至终是空的。随后 full-upgrade
+# 报 ok、装包报 "No package matching 'curl' is available" —— 这条错误指向包名，
+# 和真正的原因（一个可用源都没有）完全对不上，极难往源的方向想。
+- name: 确认 APT 包列表确实已下载
+  ansible.builtin.find:
+    paths: /var/lib/apt/lists
+    patterns: "*_Packages*"
+    file_type: file
+  register: _base_apt_lists
+  changed_when: false
+
+- name: 包列表为空时强制刷新 APT 缓存  # noqa: no-handler
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 0
+  when: _base_apt_lists.matched == 0
+
+- name: 复查 APT 包列表
+  ansible.builtin.find:
+    paths: /var/lib/apt/lists
+    patterns: "*_Packages*"
+    file_type: file
+  register: _base_apt_lists_recheck
+  changed_when: false
+
+- name: 包列表仍为空时立即失败
+  ansible.builtin.assert:
+    that: _base_apt_lists_recheck.matched > 0
+    fail_msg: >-
+      强制刷新之后 /var/lib/apt/lists 中仍然没有任何包列表，说明 APT 源本身
+      不可用。先在目标机上跑 `sudo apt-get update` 看真实报错，不要看后续的
+      "No package matching ..." —— 那条错误指向包名，会把人带偏。
+      常见成因：用完整 DVD ISO 离线安装且跳过了网络镜像，装完后 cdrom 源被
+      注释掉，于是一个可用源都不剩。
+    quiet: true
+  when: not ansible_check_mode
 
 - name: 执行 APT full-upgrade（PDF 6.1）
   ansible.builtin.apt:

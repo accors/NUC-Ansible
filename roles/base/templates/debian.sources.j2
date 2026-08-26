@@ -1,0 +1,20 @@
+{#
+  Debian 官方 APT 源，deb822 格式（Debian 12 起的默认格式）。
+  由 Ansible 管理，手工改动会在下次运行时被覆盖。
+
+  用完整 DVD ISO 离线安装且跳过网络镜像时，装完后 cdrom 源会被注释掉，
+  系统就一个可用源都不剩。security 套件尤其不能少 —— unattended-upgrades
+  默认只处理 Debian-Security，缺了它自动安全更新等于没开。
+#}
+# 本文件由 Ansible 管理（roles/base/templates/debian.sources.j2），请勿手工编辑。
+Types: deb
+URIs: {{ nuc_debian_mirror_uri }}
+Suites: {{ nuc_debian_codename }} {{ nuc_debian_codename }}-updates
+Components: {{ nuc_debian_components | join(' ') }}
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+
+Types: deb
+URIs: {{ nuc_debian_security_uri }}
+Suites: {{ nuc_debian_codename }}-security
+Components: {{ nuc_debian_components | join(' ') }}
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg

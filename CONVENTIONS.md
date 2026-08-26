@@ -49,6 +49,9 @@
 | 变量 | 类型 | 默认值摘要 | 来源 | 说明 |
 |---|---|---|---|---|
 | `nuc_srv_directories` | list[dict] | 见 3.1 | 9.1、11.1 | 每项固定含 `path`、`owner`、`group`、`mode`、`purpose`、`managed_by` |
+| `nuc_debian_mirror_uri` | string | `http://deb.debian.org/debian` | 6.1 | Debian 主仓库；`base` 以 deb822 写入 `/etc/apt/sources.list.d/debian.sources` |
+| `nuc_debian_security_uri` | string | `http://security.debian.org/debian-security` | 6.1 | 安全仓库；缺了它 unattended-upgrades 等于没开 |
+| `nuc_debian_components` | list[string] | `main`、`contrib`、`non-free-firmware` | 6.1 | 与安装介质一致；`non-free-firmware` 必须保留，无线网卡等固件包在其中 |
 | `nuc_base_packages` | list[string] | `openssh-server`、`curl`、`ca-certificates`、`gnupg`、`git`、`tmux`、`ripgrep`、`jq`、`ufw`、`unattended-upgrades`、`nvme-cli`、`smartmontools`、`lm-sensors`、`btop`、`restic` | 6.1 | Debian 基础包集合 |
 | `nuc_sleep_targets` | list[string] | 四个 sleep target | 6.3 | `sleep.target`、`suspend.target`、`hibernate.target`、`hybrid-sleep.target` |
 | `nuc_unattended_upgrades_auto_reboot` | boolean | `false` | 6.4 | 第一阶段必须保持关闭 |
@@ -257,6 +260,8 @@ role tag 与目录名完全相同，`site.yml` 只按下列顺序表达依赖，
 - `restic` 的仓库存在性判定必须用 `restic cat config` 的退出码（10 = 仓库不存在，12 = 密码错误），不得匹配英文错误文本——文本随版本与 locale 变化。因此 role 必须先断言 restic ≥ 0.17.1，否则判定会静默失效。
 - `cloudflared` 不得使用 `cloudflared service install`：该命令需要 `creates:` 才幂等，而 `creates:` 会让 unit 存在后永不重跑，vault 中轮换 token 后本机不再收敛。token 文件与 unit 一律由 Ansible 的 `copy`/`template` 管理，二者都 `notify` 重启；token 只走 `--token-file`，不得进入 `ExecStart` 文本或命令行。
 - `docker` 必须读取并递归合并现有 `/etc/docker/daemon.json`，保留契约外已有键；不得整体覆盖。
+- `base` 必须先写入 Debian 官方 APT 源再做任何 apt 操作。用完整 DVD ISO 离线安装且跳过网络镜像时，安装器会在装完后注释掉 cdrom 源，系统里一个可用源都不剩。
+- **`cache_valid_time` 只比对 `/var/lib/apt/lists` 的目录 mtime，不看目录里有没有内容。** 空目录只要 mtime 够新（DVD 装机后正是如此），`apt` 模块就判定缓存有效、跳过 update 并报 `ok`，而列表自始至终是空的；随后 `full-upgrade` 报 `ok`、装包报 `No package matching 'curl' is available` —— 这条错误指向包名，和真正的原因完全对不上。因此 `base` 必须在 update 之后**实测**包列表非空，为空时以 `cache_valid_time: 0` 强制刷新，复查仍为空才失败。已实测复现并验证自愈。
 - 任何会被渲染进配置文件的环境相关变量，其消费方 role 必须在写文件之前断言它不是占位值。`nuc_access_hostname` 由 `paseo` 拦（它进 `daemon.hostnames`，占位值会让 Access 路径的 Host 校验失败，而现象像「连接被拒绝」）；`nuc_hostname` 由 `base` 拦；两个 token 与 Restic 仓库/密码分别由 `cloudflared`、`ops_agent`、`restic` 拦。`nuc_tailscale_ipv4` 不需另拦——`tailscale` 已用实测地址与它比对。
 - 域名类校验用带 `^...$` 锚点、只允许字母数字/连字符/点的正则即可，不要再叠加一条字符集正则去查引号和控制字符：Jinja 字符串字面量会把 `\\` 解成单个反斜杠，`[...\\]` 这种写法会变成未闭合字符集，正则编译直接报错。
 - `network` 只修改实测已激活的 NetworkManager profile，**不得新建**：同一接口出现两个 autoconnect profile 时，开机激活哪一个取决于时序。`nuc_lan_connection_name` 与实测名不符时必须失败。

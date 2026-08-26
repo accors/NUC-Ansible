@@ -33,3 +33,21 @@ nuc_paseo_port: 6767
 nuc_ufw_tailscale_ports:
   - 22
   - "{{ nuc_paseo_port }}"
+
+# Debian 官方 APT 源。用完整 DVD ISO 离线安装时，安装器会在装完后把 cdrom 源
+# 注释掉，而跳过网络镜像那一步就意味着一个可用源都不剩——apt 里连 curl 都没有
+# 候选版本。preseed 安装（mirror/http/hostname）不会出现这个问题，但本 role
+# 仍然显式写入，好让重装与灾难恢复不依赖安装方式。
+# 与 tailscale/defaults 中的声明保持一致（CONVENTIONS 2.1）。
+nuc_debian_codename: trixie
+
+nuc_debian_mirror_uri: http://deb.debian.org/debian
+nuc_debian_security_uri: http://security.debian.org/debian-security
+
+# 组件与安装介质保持一致（DVD 提供的是 contrib main non-free-firmware）。
+# non-free-firmware 必须保留：Intel 无线网卡等硬件的固件包在这个组件里，
+# 去掉之后固件不再收到安全更新。
+nuc_debian_components:
+  - main
+  - contrib
+  - non-free-firmware
