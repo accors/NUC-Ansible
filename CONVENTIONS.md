@@ -30,7 +30,7 @@
 | `nuc_lan_connection_name` | string | `Wired connection 1` | 任务补充 | 要修改的 NetworkManager profile 名；`network` 只改实测已激活的这一个，名字不符即失败，**不得新建 profile** |
 | `nuc_lan_route_metric` | integer | `100` | 任务补充 | 以太网默认路由 metric；必须小于 WiFi 的 metric（实测 `wlo1` 为 600），否则 WiFi 抢走默认路由 |
 | `nuc_tailscale_ipv4` | string | `local.yml` | 8.5、10.2 | 人工授权后用 `tailscale ip -4` 实测；必须属于 `100.64.0.0/10`。**不进入 `daemon.listen`，但必须进入 `daemon.hostnames`**，否则 tailnet 客户端会被 Host 校验拒绝 |
-| `nuc_access_hostname` | string | `local.yml` | 8.5、10.4 | Cloudflare Published application 域名；必须进入 Paseo `daemon.hostnames` |
+| `nuc_access_hostname` | string | `local.yml` | 8.5、10.4 | Cloudflare Published application 域名；必须进入 Paseo `daemon.hostnames`，因此**必须在运行 `paseo` 之前填好**，`paseo` 第一条 task 拦占位值与非法域名 |
 | `nuc_paseo_port` | integer | `6767` | 7.3、8.5 | Paseo 监听端口；`daemon.listen` 固定为 `0.0.0.0:<port>`，LAN 侧隔离由 UFW 负责 |
 | `nuc_agent_runner_user` | string | `agent-runner` | 11.1 | 无 sudo、无 Docker 组的自动化账号 |
 | `nuc_agent_runner_home` | path | `/var/lib/agent-runner` | 11.1、11.3 | agent-runner 的系统 home |
@@ -255,6 +255,8 @@ role tag 与目录名完全相同，`site.yml` 只按下列顺序表达依赖，
 - `restic` 的仓库存在性判定必须用 `restic cat config` 的退出码（10 = 仓库不存在，12 = 密码错误），不得匹配英文错误文本——文本随版本与 locale 变化。因此 role 必须先断言 restic ≥ 0.17.1，否则判定会静默失效。
 - `cloudflared` 不得使用 `cloudflared service install`：该命令需要 `creates:` 才幂等，而 `creates:` 会让 unit 存在后永不重跑，vault 中轮换 token 后本机不再收敛。token 文件与 unit 一律由 Ansible 的 `copy`/`template` 管理，二者都 `notify` 重启；token 只走 `--token-file`，不得进入 `ExecStart` 文本或命令行。
 - `docker` 必须读取并递归合并现有 `/etc/docker/daemon.json`，保留契约外已有键；不得整体覆盖。
+- 任何会被渲染进配置文件的环境相关变量，其消费方 role 必须在写文件之前断言它不是占位值。`nuc_access_hostname` 由 `paseo` 拦（它进 `daemon.hostnames`，占位值会让 Access 路径的 Host 校验失败，而现象像「连接被拒绝」）；`nuc_hostname` 由 `base` 拦；两个 token 与 Restic 仓库/密码分别由 `cloudflared`、`ops_agent`、`restic` 拦。`nuc_tailscale_ipv4` 不需另拦——`tailscale` 已用实测地址与它比对。
+- 域名类校验用带 `^...$` 锚点、只允许字母数字/连字符/点的正则即可，不要再叠加一条字符集正则去查引号和控制字符：Jinja 字符串字面量会把 `\\` 解成单个反斜杠，`[...\\]` 这种写法会变成未闭合字符集，正则编译直接报错。
 - `network` 只修改实测已激活的 NetworkManager profile，**不得新建**：同一接口出现两个 autoconnect profile 时，开机激活哪一个取决于时序。`nuc_lan_connection_name` 与实测名不符时必须失败。
 - `network` 必须保持 `conn_reload: false`（`community.general.nmcli` 的默认值），只执行 `nmcli con modify`。`modify` 不影响已激活的连接，因此 Ansible 连接不会在 play 中途断掉；地址切换是交互清单里的一道人工重启门禁。加上 `state: up` 或 `conn_reload: true` 会当场断连。
 - 静态地址掩码只从 `nuc_lan_cidr` 推导，不得单设变量：UFW 规则用的是同一个 CIDR，两处分开写迟早出现 /22 与 /24 不一致，而这种错误要等到访问网段高位地址时才暴露。

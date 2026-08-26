@@ -1,4 +1,29 @@
 ---
+# nuc_access_hostname 会被 config.json.j2 直接渲染进 daemon.hostnames。
+# 这里必须拦住占位值：Cloudflare Access 那条路径靠 hostnames 做 Host 校验，
+# 写进 CHANGE_ME 之后 daemon 会拒绝该 Host，而现象看起来像「连接被拒绝」，
+# 极难往配置方向想。且门禁 4 只重跑 cloudflared，不会重跑 paseo 把它修回来，
+# 所以这个值必须在跑 paseo 之前就定下来（不需要等 tunnel 建好，只是个域名）。
+# nuc_tailscale_ipv4 不在此校验：tailscale role 已用实测地址与它比对。
+- name: 校验 Cloudflare Access 域名已填写
+  ansible.builtin.assert:
+    that:
+      - >-
+        nuc_access_hostname is defined and nuc_access_hostname is string and
+        (nuc_access_hostname | trim) not in ['', 'CHANGE_ME'] and
+        (nuc_access_hostname | trim | upper) != 'CHANGE_ME'
+      - not ((nuc_access_hostname | trim) is search('\.invalid$'))
+      # 下面这条带 ^...$ 锚点，只允许字母数字、连字符和点，因此引号、反斜杠、
+      # 换行等会破坏 config.json 的字符一并被拒，不需要单独再写一条字符集正则
+      # （那种写法里的 \\ 会被 Jinja 解成单个反斜杠，导致字符集未闭合）。
+      - >-
+        (nuc_access_hostname | trim) is match('^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$')
+    fail_msg: >-
+      nuc_access_hostname 未填写或不是合法的完全限定域名。请在不提交的
+      group_vars/all/local.yml 中填入 Cloudflare Published application 的真实
+      Hostname，必须与 Dashboard 中完全一致。该值会进入 Paseo 的
+      daemon.hostnames，用于 Access 路径的 Host 校验。
+
 - name: 要求 Paseo 与产生运行时事实的上游 tags 同跑
   ansible.builtin.assert:
     that:

@@ -126,6 +126,11 @@
 
 ### C3. Paseo 配置落地后、user service 启用之前
 
+- [ ] **先把 `nuc_access_hostname` 填进 `local.yml`，再运行 paseo。** 它会被渲染进
+  `daemon.hostnames`，Access 路径靠它做 Host 校验。D 节只重跑 `--tags cloudflared`，
+  不会回头修 `config.json`，所以留着占位值跑过去的话，等到从 Access 访问时才会暴露，
+  且现象看起来像「连接被拒绝」。这个值就是你打算用的域名，不必等 tunnel 建好；
+  要等 Dashboard 的是 D 节的 token。paseo role 的第一条 task 会拦占位值和非法域名。
 - [ ] 运行 `--tags codex,tailscale,paseo`。前两个 tag 会重新导出 Paseo 所需的
   Codex 路径和 Tailscale 地址；首次执行在写入 `~/.paseo/config.json` 后会因密码门禁
   有意停止。

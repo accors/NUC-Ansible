@@ -119,10 +119,18 @@ SSH 私钥不得放入 Vault、仓库或备份。
 2. 运行 `--tags tailscale`。首次安装后会在未授权时有意失败；人工执行
    `sudo tailscale up`，把 `tailscale ip -4` 的唯一地址写入
    `nuc_tailscale_ipv4`，再重跑同一 tag。
-3. 运行 `--tags codex,tailscale,paseo`。Paseo 写入 `config.json` 后会在
-   `nuc_paseo_password_configured: false` 时有意失败；人工执行
-   `paseo daemon set-password`，把该变量改为 `true`，再重跑这三个 tag。
+3. **先确定 `nuc_access_hostname` 并填入 `local.yml`**，再运行
+   `--tags codex,tailscale,paseo`。这个值会被渲染进 Paseo 的 `daemon.hostnames`，
+   而 Access 路径靠它做 Host 校验；下一步只重跑 `cloudflared`，不会回头修
+   `config.json`，所以必须在 paseo 之前定下来。它只是你打算使用的域名，
+   不必等 tunnel 建好——真正要等 Dashboard 的是第 4 步的 token。填的是占位值或
+   非法域名时 paseo role 会在第一条 task 就失败。
+
+   Paseo 写入 `config.json` 后会在 `nuc_paseo_password_configured: false` 时
+   有意失败；人工执行 `paseo daemon set-password`，把该变量改为 `true`，
+   再重跑这三个 tag。
 4. 在 Cloudflare Dashboard 完成 tunnel、Published application 与 Access policy，
+   其中 Hostname 必须与第 3 步填入的 `nuc_access_hostname` 完全一致。
    将 token 写入加密 Vault，然后运行 `--tags cloudflared`。
 5. 运行 `--tags agent_runner`。第一次会在创建账号、目录和 unit 后因独立 Codex OAuth
    登录态缺失而有意失败；按清单以 `agent-runner` 身份执行
