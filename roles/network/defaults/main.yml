@@ -1,0 +1,17 @@
+---
+# LAN 物理接口。名字来自 systemd 的 PCI 路径命名（enp<总线>s<插槽>），
+# 只要不换主板、不加 PCIe 网卡就是稳定的。实测：`ip -4 addr show`。
+nuc_lan_interface: enp86s0
+
+# NetworkManager 连接 profile 名。Debian 安装器把网络交给 NM 之后自动生成，
+# 首块有线网卡固定叫 "Wired connection 1"。
+#
+# role 只修改这个已存在的 profile，不新建。新建会让同一接口下出现两个
+# autoconnect profile，开机激活哪一个取决于时序——这类故障极难复现。
+# 若实测激活的 profile 名与此处不符，role 会停止而不是擅自创建。
+nuc_lan_connection_name: "Wired connection 1"
+
+# 以太网默认路由 metric。必须小于 WiFi 的 metric（实测 wlo1 为 600），
+# 否则 WiFi 会抢走默认路由：机器仍然在线，但换了个地址，
+# 现象是「能 ping 通网段但 ansible_host 连不上」。
+nuc_lan_route_metric: 100

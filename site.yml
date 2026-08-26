@@ -6,6 +6,11 @@
 
   # role 顺序就是依赖关系；禁止改用 meta/dependencies。
   roles:
+    # network 必须最先执行：它只改写 NetworkManager profile、不激活，
+    # 因此不会中断本次连接；地址切换由交互清单里的重启完成。
+    - role: network
+      tags:
+        - network
     - role: base
       tags:
         - base

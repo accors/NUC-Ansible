@@ -24,6 +24,19 @@
 #   家庭 LAN 网段，在 NUC 上用 `ip route` 实测得到。UFW 只允许该网段访问 SSH，
 #   填错会在 `--tags base` 启用 UFW 时阻断 SSH。（CONVENTIONS 2.1、PDF 7.2）
 #
+# nuc_static_ipv4          string
+#   enp86s0 的静态地址。掩码不单独设，由 nuc_lan_cidr 的前缀推导——UFW 规则用的是
+#   同一个 CIDR，分开写迟早出现 /22 与 /24 不一致，而那种错误要等到访问网段高位
+#   地址时才暴露。必须落在 nuc_lan_cidr 内、不是网络地址或广播地址、且不等于网关；
+#   network role 在写入 profile 前逐条断言。（CONVENTIONS 2.1）
+#
+# nuc_lan_gateway          string
+#   默认网关，实测 `ip route` 中 default via 的地址。（CONVENTIONS 2.1）
+#
+# nuc_lan_dns              list[string]
+#   DNS 解析器，至少一个。切换到静态后 DHCP 不再下发 DNS，必须显式给出，
+#   否则重启后解析全断。（CONVENTIONS 2.1）
+#
 # nuc_hostname              string
 #   目标机的系统主机名，由 base role 写入 /etc/hostname 与 /etc/hosts 的 127.0.1.1。
 #   必须是合法 RFC 1123 标签；base 在设置前先校验，格式非法即失败——写坏之后 sudo

@@ -28,6 +28,21 @@ nuc_admin_authorized_keys:
 # 占位值取自 RFC 5737 文档网段，直接使用会把自己挡在门外。
 nuc_lan_cidr: 192.0.2.0/24
 
+# enp86s0 的静态地址。掩码不单独设，由 nuc_lan_cidr 推导，两者必须一致。
+# 必须落在 nuc_lan_cidr 内、不是网络地址或广播地址、且不等于网关，
+# network role 会在写入 profile 前逐条断言。
+# 还要确认它在路由器 DHCP 池之外，否则早晚与新接入的设备撞地址。
+nuc_static_ipv4: 192.0.2.10
+
+# 默认网关，实测 `ip route` 中 default via 的地址。
+nuc_lan_gateway: 192.0.2.1
+
+# DNS 解析器。切换到静态后 DHCP 不再下发，必须显式给出；
+# 可沿用切换前 /etc/resolv.conf 中路由器下发的上游地址。
+nuc_lan_dns:
+  - 192.0.2.53
+  - 192.0.2.54
+
 # `sudo tailscale up` 授权后用 `tailscale ip -4` 实测，必须属于 100.64.0.0/10。
 nuc_tailscale_ipv4: CHANGE_ME
 

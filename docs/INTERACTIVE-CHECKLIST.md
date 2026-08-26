@@ -8,6 +8,8 @@
 
 ## A. Ansible 之前：硬件、Debian 与初始连接
 
+### A1. 硬件、系统与首次连接
+
 - [ ] **人工：更新 BIOS**（PDF 3、13.1）。使用 ASUS EZ Flash 3 和 F7 进入 BIOS；
   部署指南记录的基线为版本 0044，若 ASUS 已发布兼容的新版本，应按发布说明确认后
   使用当前兼容版本。
@@ -24,6 +26,46 @@
 - [ ] 在 GitHub 仓库 **Settings → Advanced Security** 确认 Secret Protection
   （secret scanning）与 Push protection 均已启用；这只是提交前护栏，不能替代
   Vault、`.gitignore` 与人工复核。
+
+### A2. `network` 之后：静态地址切换（人工重启门禁）
+
+`network` role 只改写 NetworkManager profile，**不激活**——`nmcli con modify` 不影响
+已激活的连接，所以跑完 playbook 时地址没变、Ansible 连接也没断。切换靠这一步的重启。
+
+- [ ] **先确认静态地址在路由器 DHCP 池之外。**
+  从路由器管理界面查出 DHCP 池的起止范围。`nuc_static_ipv4` 若落在池内，早晚会与新接入的
+  设备撞地址，而故障现象是间歇性的，很难往这个方向想。池内的话要么换地址，
+  要么在路由器上为它加一条 MAC 保留。
+- [ ] 运行 `.venv/bin/ansible-playbook site.yml --ask-vault-pass --tags network`。
+- [ ] 在 NUC 上回读 profile，确认写进去的是期望值（此时运行态仍是旧的 DHCP 地址，
+  这是正常的）：
+
+  ```bash
+  nmcli -g ipv4.method,ipv4.addresses,ipv4.gateway,ipv4.dns connection show "Wired connection 1"
+  ```
+
+  应输出 `manual`、`<nuc_static_ipv4>/<nuc_lan_cidr 的前缀>`、`<nuc_lan_gateway>`
+  和 `nuc_lan_dns` 中的地址。**掩码必须与 `nuc_lan_cidr` 的前缀一致**：网段是 `/22`
+  却写成 `/24` 的话，高位那 3/4 个网段会被当成跨网段，走网关绕行或直接不通。
+  role 由 `nuc_lan_cidr` 推导掩码正是为了堵住这一类不一致。
+- [ ] **人工：重启 NUC**（`sudo reboot`）。切换在此发生。
+- [ ] 重启后确认运行态：
+
+  ```bash
+  ip -4 addr show "$IFACE"     # 应为 nuc_static_ipv4 加 nuc_lan_cidr 的前缀
+  ip route                     # default via nuc_lan_gateway，dev 为该接口
+  getent hosts deb.debian.org  # DNS 能解析
+  ```
+
+  以太网默认路由的 metric 必须**小于** WiFi 的。反了的话默认路由会走 WiFi：
+  机器仍然在线，但用的是 WiFi 那一侧的地址，现象是「能 ping 通网段但
+  `ansible_host` 连不上」。
+- [ ] **如果以太网没起来**：本机保留了 WiFi 作为兜底，仍可通过 WiFi 侧的 DHCP 地址
+  登录，不必接键盘显示器。登录后用 `nmcli con show "$CONN"` 查错，或
+  `nmcli con modify "$CONN" ipv4.method auto` 临时退回 DHCP。
+  （`$CONN` 即 `nuc_lan_connection_name`。）
+- [ ] 把 `inventory.yml` 的 `ansible_host` 改成 `nuc_static_ipv4` 的值，
+  再验证 `.venv/bin/ansible agent-nuc -m ansible.builtin.ping` 成功。
 
 ## B. 基础防护、SSH 与本地服务
 

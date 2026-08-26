@@ -13,7 +13,7 @@
 
 所有非秘密变量使用 `nuc_` 前缀；秘密使用 `vault_nuc_` 前缀。下表列出允许写入 `group_vars/all/main.yml` 的完整变量集合。role 的 `defaults/main.yml` 只能重述自己使用的这些变量，默认值必须一致。
 
-其中七项是环境相关值：`nuc_hostname`、`nuc_admin_user`、`nuc_admin_authorized_keys`、`nuc_lan_cidr`、`nuc_tailscale_ipv4`、`nuc_access_hostname`、`nuc_restic_repository`。它们不写入提交进仓库的 `main.yml`，改由不提交的 `group_vars/all/local.yml` 提供（模板 `local.example.yml` 只含占位符），因此下表中它们的「默认值」列记为 `local.yml`，`main.yml` 与 role 的 `defaults/main.yml` 都不为其设默认值。变量名、类型与语义不受影响。
+其中十项是环境相关值：`nuc_hostname`、`nuc_admin_user`、`nuc_admin_authorized_keys`、`nuc_lan_cidr`、`nuc_static_ipv4`、`nuc_lan_gateway`、`nuc_lan_dns`、`nuc_tailscale_ipv4`、`nuc_access_hostname`、`nuc_restic_repository`。它们不写入提交进仓库的 `main.yml`，改由不提交的 `group_vars/all/local.yml` 提供（模板 `local.example.yml` 只含占位符），因此下表中它们的「默认值」列记为 `local.yml`，`main.yml` 与 role 的 `defaults/main.yml` 都不为其设默认值。变量名、类型与语义不受影响。
 
 ### 2.1 主机、账号与网络
 
@@ -23,6 +23,12 @@
 | `nuc_admin_user` | string | `local.yml` | 5、7.1、8.3 | 已由 Debian 安装器创建的个人管理员；Paseo 与交互式 Codex 使用此账号 |
 | `nuc_admin_authorized_keys` | list[string] | `local.yml` | 7.1 | 至少一把公钥；为空时 `ssh_harden` 必须在关闭密码认证前失败 |
 | `nuc_lan_cidr` | string | `local.yml` | 7.2 | 用 `ip route` 实测；只允许该网段访问 SSH |
+| `nuc_static_ipv4` | string | `local.yml` | 任务补充 | enp86s0 的静态地址；掩码由 `nuc_lan_cidr` 前缀推导，不单独设变量。必须落在 `nuc_lan_cidr` 内、非网络/广播地址、且不等于网关，`network` 写入 profile 前逐条断言 |
+| `nuc_lan_gateway` | string | `local.yml` | 任务补充 | 默认网关；实测 `ip route` 的 default via |
+| `nuc_lan_dns` | list[string] | `local.yml` | 任务补充 | DNS 解析器，至少一个。切换静态后 DHCP 不再下发 DNS，必须显式给出 |
+| `nuc_lan_interface` | string | `enp86s0` | 任务补充 | LAN 物理接口；systemd PCI 路径命名，换主板或加 PCIe 网卡才会变 |
+| `nuc_lan_connection_name` | string | `Wired connection 1` | 任务补充 | 要修改的 NetworkManager profile 名；`network` 只改实测已激活的这一个，名字不符即失败，**不得新建 profile** |
+| `nuc_lan_route_metric` | integer | `100` | 任务补充 | 以太网默认路由 metric；必须小于 WiFi 的 metric（实测 `wlo1` 为 600），否则 WiFi 抢走默认路由 |
 | `nuc_tailscale_ipv4` | string | `local.yml` | 8.5、10.2 | 人工授权后用 `tailscale ip -4` 实测；必须属于 `100.64.0.0/10`。**不进入 `daemon.listen`，但必须进入 `daemon.hostnames`**，否则 tailnet 客户端会被 Host 校验拒绝 |
 | `nuc_access_hostname` | string | `local.yml` | 8.5、10.4 | Cloudflare Published application 域名；必须进入 Paseo `daemon.hostnames` |
 | `nuc_paseo_port` | integer | `6767` | 7.3、8.5 | Paseo 监听端口；`daemon.listen` 固定为 `0.0.0.0:<port>`，LAN 侧隔离由 UFW 负责 |
@@ -221,17 +227,18 @@ role tag 与目录名完全相同，`site.yml` 只按下列顺序表达依赖，
 
 | 顺序 | role/tag | 主要前置 |
 |---:|---|---|
-| 1 | `base` | 裸 Debian 已能用管理员 + sudo 连接 |
-| 2 | `ssh_harden` | `nuc_admin_authorized_keys` 非空且另一个会话已验证密钥 |
-| 3 | `srv_layout` | 管理员账号存在 |
-| 4 | `docker` | 基础网络与 ca-certificates 可用 |
-| 5 | `codex` | 管理员账号存在；安装后人工 `codex login` |
-| 6 | `tailscale` | 安装后人工 `sudo tailscale up`，再重跑完成地址校验 |
-| 7 | `paseo` | Codex 已登录、Tailscale 地址已验证；config 写入后人工设密码 |
-| 8 | `cloudflared` | Dashboard 已建 tunnel/Access，token 已写入 vault |
-| 9 | `agent_runner` | Node/npm 可用；人工完成独立 Codex OAuth 登录；具体任务出现后才首次验收 service |
-| 10 | `ops_agent` | Node/npm 可用；Gateway token 已写入 Vault；之后人工完成 ChatGPT/Codex OAuth 登录 |
-| 11 | `restic` | 仓库地址和 vault 密码已填写 |
+| 1 | `network` | 接口由 NetworkManager 管理；只改 profile 不激活，切换靠人工重启 |
+| 2 | `base` | 裸 Debian 已能用管理员 + sudo 连接 |
+| 3 | `ssh_harden` | `nuc_admin_authorized_keys` 非空且另一个会话已验证密钥 |
+| 4 | `srv_layout` | 管理员账号存在 |
+| 5 | `docker` | 基础网络与 ca-certificates 可用 |
+| 6 | `codex` | 管理员账号存在；安装后人工 `codex login` |
+| 7 | `tailscale` | 安装后人工 `sudo tailscale up`，再重跑完成地址校验 |
+| 8 | `paseo` | Codex 已登录、Tailscale 地址已验证；config 写入后人工设密码 |
+| 9 | `cloudflared` | Dashboard 已建 tunnel/Access，token 已写入 vault |
+| 10 | `agent_runner` | Node/npm 可用；人工完成独立 Codex OAuth 登录；具体任务出现后才首次验收 service |
+| 11 | `ops_agent` | Node/npm 可用；Gateway token 已写入 Vault；之后人工完成 ChatGPT/Codex OAuth 登录 |
+| 12 | `restic` | 仓库地址和 vault 密码已填写 |
 
 不得创建第二套细分 tag。交互门禁通过布尔变量与清单表达，避免 `paseo:install` 一类带冒号 tag 在不同调用方式中的歧义。
 
@@ -248,6 +255,10 @@ role tag 与目录名完全相同，`site.yml` 只按下列顺序表达依赖，
 - `restic` 的仓库存在性判定必须用 `restic cat config` 的退出码（10 = 仓库不存在，12 = 密码错误），不得匹配英文错误文本——文本随版本与 locale 变化。因此 role 必须先断言 restic ≥ 0.17.1，否则判定会静默失效。
 - `cloudflared` 不得使用 `cloudflared service install`：该命令需要 `creates:` 才幂等，而 `creates:` 会让 unit 存在后永不重跑，vault 中轮换 token 后本机不再收敛。token 文件与 unit 一律由 Ansible 的 `copy`/`template` 管理，二者都 `notify` 重启；token 只走 `--token-file`，不得进入 `ExecStart` 文本或命令行。
 - `docker` 必须读取并递归合并现有 `/etc/docker/daemon.json`，保留契约外已有键；不得整体覆盖。
+- `network` 只修改实测已激活的 NetworkManager profile，**不得新建**：同一接口出现两个 autoconnect profile 时，开机激活哪一个取决于时序。`nuc_lan_connection_name` 与实测名不符时必须失败。
+- `network` 必须保持 `conn_reload: false`（`community.general.nmcli` 的默认值），只执行 `nmcli con modify`。`modify` 不影响已激活的连接，因此 Ansible 连接不会在 play 中途断掉；地址切换是交互清单里的一道人工重启门禁。加上 `state: up` 或 `conn_reload: true` 会当场断连。
+- 静态地址掩码只从 `nuc_lan_cidr` 推导，不得单设变量：UFW 规则用的是同一个 CIDR，两处分开写迟早出现 /22 与 /24 不一致，而这种错误要等到访问网段高位地址时才暴露。
+- `collections/` 只装 `ansible.posix` 与 `community.general`，**没有 `ansible.utils`，`ipaddr` 系列过滤器不可用**。网段归属判定用纯 Jinja 整数运算（点分四段转 32 位整数后比较区间），不得引入新 collection。
 - 已发布容器端口的流量在到达 UFW 的 INPUT 规则前就被 DNAT 转发，UFW 挡不住 `docker run -p`。`daemon.json` 必须同时设置 `ip`（默认 bridge）与 `default-network-opts.bridge.com.docker.network.bridge.host_binding_ipv4`（Compose 建的用户定义 bridge），只设其一覆盖不全。二者都是**默认值**，compose 中显式写 host IP 仍可覆盖；强制边界需要 `DOCKER-USER` 链规则，留待部署第一个 stack 时决定。
 - `ssh_harden` 必须先落地 `authorized_keys`，再写 `10-hardening.conf`；写配置的任务必须带 `validate: /usr/sbin/sshd -t -f %s`。
 - `nuc_admin_authorized_keys` 的每一项首段必须是 `nuc_ssh_supported_key_types` 中的类型：公钥比对只取前两段，带 options 的条目（`from=`、`command=`、`no-pty` 等）会比对错字段，在 `exclusive: true` 下表现为反复重写或误删。本项目明确不支持带 options 的条目，需要限制来源时用 sshd_config 的 `Match` 块表达。

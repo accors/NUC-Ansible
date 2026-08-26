@@ -39,7 +39,7 @@ cp files/preseed.example.cfg files/preseed.cfg
 
 | 文件 | 填什么 |
 |---|---|
-| `group_vars/all/local.yml` | `nuc_hostname`、`nuc_admin_user`、`nuc_admin_authorized_keys`、`nuc_lan_cidr`、`nuc_tailscale_ipv4`、`nuc_access_hostname`、`nuc_restic_repository` |
+| `group_vars/all/local.yml` | `nuc_hostname`、`nuc_admin_user`、`nuc_admin_authorized_keys`、`nuc_lan_cidr`、`nuc_static_ipv4`、`nuc_lan_gateway`、`nuc_lan_dns`、`nuc_tailscale_ipv4`、`nuc_access_hostname`、`nuc_restic_repository` |
 | `group_vars/all/vault.yml` | `vault_nuc_restic_password`、`vault_nuc_cloudflared_tunnel_token`、`vault_nuc_ops_agent_gateway_token` |
 | `inventory.yml` | NUC 的 LAN 地址与 `ansible_user` |
 | `files/preseed.cfg` | 管理员用户名、密码哈希、SSH 公钥 |
@@ -96,10 +96,16 @@ SSH 私钥不得放入 Vault、仓库或备份。
 每一步都应对照交互清单。以下命令默认需要 Vault 密码：
 
 ```bash
+.venv/bin/ansible-playbook site.yml --ask-vault-pass --tags network
 .venv/bin/ansible-playbook site.yml --ask-vault-pass --tags base
 .venv/bin/ansible-playbook site.yml --ask-vault-pass --tags ssh_harden
 .venv/bin/ansible-playbook site.yml --ask-vault-pass --tags srv_layout,docker
 ```
+
+`network` 为 LAN 接口写入静态地址，但**只改 NetworkManager profile、不激活**：
+`nmcli con modify` 不影响已激活的连接，因此 Ansible 连接不会在 play 中途断掉。
+地址切换是交互清单 A2 的一次人工重启，重启后要把 `inventory.yml` 的 `ansible_host`
+改成新地址。静态地址必须在路由器 DHCP 池之外，否则早晚与新接入的设备撞地址。
 
 在运行 `base` 前先确认 `nuc_lan_cidr`，否则启用 UFW 可能阻断 SSH。运行
 `ssh_harden` 前，必须从第二个终端验证声明的公钥确实能登录；role 会先落地公钥，
@@ -160,8 +166,8 @@ SSH 私钥不得放入 Vault、仓库或备份。
 `site.yml` 固定按以下顺序执行，不使用 `meta/dependencies`：
 
 ```text
-base → ssh_harden → srv_layout → docker → codex → tailscale → paseo
-     → cloudflared → agent_runner → ops_agent → restic
+network → base → ssh_harden → srv_layout → docker → codex → tailscale
+        → paseo → cloudflared → agent_runner → ops_agent → restic
 ```
 
 - Paseo 监听 `0.0.0.0:6767`，relay 关闭；LAN 侧由 UFW 显式拒绝，tailnet 侧由

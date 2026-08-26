@@ -1,0 +1,8 @@
+---
+galaxy_info:
+  role_name: network
+  author: agent-nuc
+  description: 为 LAN 接口写入静态地址的 NetworkManager profile
+  license: MIT
+  min_ansible_version: "2.16"
+dependencies: []
