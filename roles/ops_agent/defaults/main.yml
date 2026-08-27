@@ -56,6 +56,6 @@ nuc_ops_agent_observable_properties:
 nuc_ops_agent_model: openai/gpt-5.6-sol
 
 nuc_ops_agent_gateway_port: 18789
-nuc_openclaw_version: 2026.8.1-beta.2
+nuc_openclaw_version: 2026.8.1-beta.3
 nuc_nodejs_major: 22
 nuc_nvme_device: /dev/nvme0

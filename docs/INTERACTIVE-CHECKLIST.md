@@ -343,10 +343,13 @@
       --provider openai --device-code
   ```
 
-  `--device-code` 是布尔开关，不是 `--method device-code`；`models auth login`
-  **不接受 `--agent`**（实测 2026.8.1-beta.2 会报 does not recognize option）。
-  认证 profile 是按 provider 而非按 agent 存的。注意 `models auth list` 与
-  `openclaw agent` 确实支持 `--agent`，别一并改掉。
+  `--device-code` 是布尔开关，不是 `--method device-code`。
+
+  `--agent` 在两个版本上表现不同：`2026.8.1-beta.2` 的 `models auth login`
+  **不接受**它（实测报 does not recognize option），`2026.8.1-beta.3` 又加了回来
+  （`--agent <id>`，默认取配置里的默认 agent）。上面这条命令**两个版本都能用**，
+  因为省略时 beta.3 会取默认 agent —— 所以不要为了"补全"而加上它。
+  `models auth list` 与 `openclaw agent` 在两个版本上都支持 `--agent`。
 
   **看到 `EACCES: permission denied, open '/etc/openclaw/ops-agent.json.lock'`
   是预期的，登录并没有失败。** 设备码流程走完后，OpenClaw 会尝试回写配置文件，
@@ -370,10 +373,12 @@
   `openclaw exec-policy show --json`、`openclaw policy check --agent ops --json`、
   `openclaw security audit --deep --json`；
   确认 defaults 为 deny、ops 为 allowlist/on-miss、`askFallback=deny`、
-  `autoAllowSkills=false`，且没有 critical finding。固定的 `2026.8.1-beta.2` 在全新 state
-  上可能只出现 `gateway.probe_failed: missing scope: operator.read`：这是该 beta 的无设备
-  `probe` 客户端清空自报 scope 所致，role 只精确接受这一项，并另跑 `openclaw health`
-  验证 Gateway；其他 warning 一律失败。升级后该 warning 消失是正常结果。
+  `autoAllowSkills=false`，且没有 critical finding。`2026.8.1-beta.2` 在全新 state
+  上会出现 `gateway.probe_failed: missing scope: operator.read`：这是该 beta 的无设备
+  `probe` 客户端清空自报 scope 所致。**`2026.8.1-beta.3` 实测已不再出现该 warning**，
+  审计只剩 `[info] summary.attack_surface`。role 的断言同时接受「0 个 warning」与
+  「恰好这一个」，因此两个版本都能通过；其他 warning 一律失败。role 另跑
+  `openclaw health` 独立验证 Gateway。
 - [ ] 用以下命令做最小功能测试；`uptime`、失败服务和固定 SMART 形状应允许，`id`、
   `systemctl restart ...`、任意 shell/解释器与未列出的参数必须被拒绝：
 

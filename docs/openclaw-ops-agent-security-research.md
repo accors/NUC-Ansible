@@ -1,6 +1,12 @@
 # OpenClaw ops agent 安全配置复核
 
-研究日期：2026-08-23。依据 OpenClaw 仓库提交 `3cb52f4bb869959dcd06cb6d4d33e34db3b6a665` 的官方文档；链接均固定到该提交。npm `latest` 当日仍为 `2026.7.1-2`，不支持这里使用的新 schema；生成配置另以当日已发布且 schema 匹配的 `2026.8.1-beta.2` CLI 实测通过，因此 role 精确 pin 该 beta，而不使用不存在的 `2026.8.1` stable。
+研究日期：2026-08-23。依据 OpenClaw 仓库提交 `3cb52f4bb869959dcd06cb6d4d33e34db3b6a665` 的官方文档；链接均固定到该提交。npm `latest` 当日仍为 `2026.7.1-2`，不支持这里使用的新 schema；生成配置另以当日已发布且 schema 匹配的 `2026.8.1-beta.2` CLI 实测通过，因此 role 当时精确 pin 该 beta，而不使用不存在的 `2026.8.1` stable。
+
+> **版本更新（2026-08-27）**：role 已升级并重新 pin 到 `2026.8.1-beta.3`。本文其余内容是
+> 针对 `2026.8.1-beta.2` 的研究记录，保留原样以说明当初的设计依据；已复验的差异见
+> `docs/INTERACTIVE-CHECKLIST.md` 的 F 节。beta.3 上的三处实测变化：
+> `security audit` 不再产生 `gateway.probe_failed` warning；`models auth login` 重新
+> 接受 `--agent`；`approvals get --json` 不再输出 exec-approvals 套接字 token。
 
 ## 结论摘要
 

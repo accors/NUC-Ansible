@@ -17,7 +17,7 @@
       - nuc_ops_agent_home == '/home/solar'
       - nuc_ops_agent_workspace == '/var/lib/openclaw-ops-agent/workspace'
       - nuc_ops_agent_gateway_port | int == 18789
-      - nuc_openclaw_version == '2026.8.1-beta.2'
+      - nuc_openclaw_version == '2026.8.1-beta.3'
       - nuc_nodejs_major | int == 22
       - nuc_nvme_device == '/dev/nvme0'
     fail_msg: >-
@@ -225,6 +225,11 @@
       请先升级 NodeSource 22.x 包。
   when: not ansible_check_mode
 
+# notify 不可省。升级 npm 包不会自动让运行中的 Gateway 换到新代码：它仍加载着
+# 旧安装，而 npm 已把那些文件换掉，随后任何请求都会报
+#   The running Gateway can no longer load part of its OpenClaw installation.
+# 实测于 beta.2 → beta.3 升级：role 报 failed=0、看起来一切正常，但 Gateway 直到
+# 手工重启前一直是坏的。handler 此前只挂在配置变更上，版本升级这条路径没有覆盖。
 - name: 安装经复核版本的 OpenClaw
   community.general.npm:
     name: openclaw
@@ -236,6 +241,7 @@
   environment:
     PATH: /usr/local/bin:/usr/bin:/bin
     NPM_CONFIG_PREFIX: /usr/local
+  notify: "ops_agent | restart gateway"
   when:
     - not ansible_check_mode
     - _ops_agent_npm_bin | length > 0
@@ -684,9 +690,10 @@
          == 'missing scope: operator.read')
     fail_msg: >-
       OpenClaw security audit 仍有 critical 或未复核的 warning finding；请查看上述 JSON
-      的 checkId 后修复。唯一暂时接受的 warning 是 2026.8.1-beta.2 在无设备身份的
-      loopback probe 上产生的 gateway.probe_failed / missing scope: operator.read；role
-      已另用 health 验证 Gateway，且升级后该 warning 消失也会通过。
+      的 checkId 后修复。唯一被接受的 warning 是 gateway.probe_failed /
+      missing scope: operator.read —— 那是 2026.8.1-beta.2 在无设备身份的 loopback
+      probe 上产生的；2026.8.1-beta.3 实测已不再出现，断言同时接受 0 个 warning，
+      因此两个版本都能通过。role 另用 health 独立验证 Gateway。
   when: not ansible_check_mode
 
 - name: 验证 loopback Gateway 健康状态

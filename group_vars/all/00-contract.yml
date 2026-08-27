@@ -193,7 +193,7 @@ nuc_ops_agent_user: solar
 nuc_ops_agent_home: /home/solar
 nuc_ops_agent_workspace: /var/lib/openclaw-ops-agent/workspace
 nuc_ops_agent_gateway_port: 18789
-nuc_openclaw_version: 2026.8.1-beta.2
+nuc_openclaw_version: 2026.8.1-beta.3
 
 nuc_restic_package_version: ""
 # nuc_restic_repository 是环境相关值，由 local.yml 提供（见本文件顶部说明）。

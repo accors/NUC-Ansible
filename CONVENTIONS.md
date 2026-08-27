@@ -87,7 +87,7 @@ PDF v1.4 只明确固定 Debian 13.6 与 Node.js 22 LTS。其余软件没有给�
 | `nuc_cloudflared_enable_service` | boolean | `true` | 10.4 | Dashboard 已建 tunnel 且 vault token 已填后安装/启用 service |
 | `nuc_cloudflared_config_dir` | path | `/etc/cloudflared` | 10.4 | token 文件所在目录，`0700 root:root` |
 | `nuc_cloudflared_token_path` | path | `/etc/cloudflared/token` | 10.4 | tunnel token 文件，`0600 root:root`；unit 以 `--token-file` 读取 |
-| `nuc_openclaw_version` | string | `2026.8.1-beta.2` | 任务补充 | npm 上与已复核 mode/SQLite approvals/policy schema 匹配的精确预发布版；升级前必须重审 |
+| `nuc_openclaw_version` | string | `2026.8.1-beta.3` | 任务补充 | npm 上与已复核 mode/SQLite approvals/policy schema 匹配的精确预发布版；升级前必须重审 |
 | `nuc_ops_agent_enabled` | boolean | `false` | 任务补充 | 人工门禁；`site.yml` 以 role 级 `when:` 控制，为 `false` 时整个 role 不执行 |
 | `nuc_ops_agent_observable_units` | list[string] | 见 defaults | 任务补充 | journal 与 unit 状态读取的 unit 白名单 |
 | `nuc_ops_agent_observable_properties` | list[string] | 见 defaults | 任务补充 | `systemctl show` 允许读取的属性白名单 |
@@ -270,6 +270,7 @@ role tag 与目录名完全相同，`site.yml` 只按下列顺序表达依赖，
 - `restic` 的仓库存在性判定必须用 `restic cat config` 的退出码（10 = 仓库不存在，12 = 密码错误），不得匹配英文错误文本——文本随版本与 locale 变化。因此 role 必须先断言 restic ≥ 0.17.1，否则判定会静默失效。
 - `cloudflared` 不得使用 `cloudflared service install`：该命令需要 `creates:` 才幂等，而 `creates:` 会让 unit 存在后永不重跑，vault 中轮换 token 后本机不再收敛。token 文件与 unit 一律由 Ansible 的 `copy`/`template` 管理，二者都 `notify` 重启；token 只走 `--token-file`，不得进入 `ExecStart` 文本或命令行。
 - `docker` 必须读取并递归合并现有 `/etc/docker/daemon.json`，保留契约外已有键；不得整体覆盖。
+- 升级 OpenClaw 的 npm 包**必须 notify Gateway 重启**。运行中的 Gateway 仍加载着旧安装，而 npm 已把那些文件换掉，随后任何请求都会报 `The running Gateway can no longer load part of its OpenClaw installation`。实测于 beta.2 → beta.3：role 报 `failed=0`、看起来一切正常，但 Gateway 直到手工重启前一直是坏的 —— handler 此前只挂在配置变更上，版本升级这条路径没有覆盖。
 - `copilot` 刻意跑在**管理员账号**下，因为它是人工交互工具。管理员有 sudo，因此它与 `agent-runner`、`solar` 那两个刻意剥掉提权能力的账号**不是同一类边界**。若将来要让 Copilot 无人值守运行，必须先搬到专用账号并按 `agent_runner` 的模式约束，不得直接给 timer。其认证只走交互式 OAuth device flow，不得使用 `COPILOT_GITHUB_TOKEN`/`GH_TOKEN`/`GITHUB_TOKEN` 这类长期静态 token——与其余三处 agent 接入一致。本机没有运行中的 secret-service，token 会以明文落在 `~/.copilot/`；该目录在 `0700` 的管理员家目录内，其他 agent 账号无法进入，且 `/home` 不在 Restic 备份范围内。
 - Paseo web UI 的连接表单默认值（`localhost` / `6767` / 不加密）在「经 Cloudflare 域名远程访问」这个场景下**三项全错**：对外端口是 443 不是 6767（Cloudflare 不暴露 origin 端口），必须勾 SSL，且必须填人工设置的 daemon 密码。参数不对时报错是 `无法连接到 tcp://localhost:6767 / code 1006` —— 那是表单回落到默认值后连本机失败的产物，**不指向真实原因**。排查这类问题必须用浏览器控制台的裸 WebSocket 走通全链路并读服务端关闭码（`4401 Password required` = 链路全通只差密码），不能只看 daemon 侧计数器：计数器为零同时符合「被中间层挡掉」与「客户端压根没发」两种情况。详见交互清单 C3。
 - **restic 对不存在的备份路径返回退出码 0 并静默跳过**（实测 0.18.0）。因此备份包装脚本必须在调用 `restic backup` 之前逐个校验 `nuc_restic_backup_paths` 中的路径，缺失即失败。否则任何一个路径消失（目录改名、`ops_agent` 被关掉、role 调整）都会让备份继续每晚报 `ok`，而那部分数据已不在保护范围内——与「连错仓库、备份照样成功」同类。缩减备份范围时应同时修改 `nuc_restic_backup_paths`，而不是让脚本容忍缺失。
