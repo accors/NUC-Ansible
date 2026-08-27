@@ -45,6 +45,16 @@ nuc_ops_agent_observable_properties:
   - NRestarts
   - LastTriggerUSec
   - NextElapseUSecRealtime
+# ops agent 使用的模型。同时写进 agents.defaults.model.primary 与
+# agents.defaults.models 的允许列表，因此这一个变量就限定了 ops 能用的全部模型
+# —— 覆盖运行时 --model 会被 modelPolicy 拒绝。
+#
+# 取决于账号的订阅套餐：`openclaw models list` 里的 Auth: yes 只表示该 provider
+# 有凭据，不等于这个模型在你的套餐上可路由。不可路由时报
+# "Unable to materialize <model> for its prepared subscription route"，
+# 而错误信息不会提示是套餐问题。换账号或换套餐时可能需要改这里。
+nuc_ops_agent_model: openai/gpt-5.6-sol
+
 nuc_ops_agent_gateway_port: 18789
 nuc_openclaw_version: 2026.8.1-beta.2
 nuc_nodejs_major: 22

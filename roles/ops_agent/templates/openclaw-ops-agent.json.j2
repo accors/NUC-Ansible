@@ -6,9 +6,13 @@
       "skipBootstrap": true,
       "skills": [],
       "heartbeat": { "every": "0m" },
-      "model": { "primary": "openai/gpt-5.6-sol" },
+      {# 模型 ID 取决于账号的订阅套餐，因此是变量而非写死值：models list 里的
+         Auth: yes 只表示该 provider 有凭据，不等于这个模型在你的套餐上可路由。
+         不可路由时 openclaw 报 "Unable to materialize <model> for its prepared
+         subscription route"，而错误信息不会说明是套餐问题。 #}
+      "model": { "primary": {{ nuc_ops_agent_model | to_json }} },
       "models": {
-        "openai/gpt-5.6-sol": {
+        {{ nuc_ops_agent_model | to_json }}: {
           "agentRuntime": { "id": "openclaw" }
         }
       },
