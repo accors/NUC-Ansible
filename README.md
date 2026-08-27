@@ -138,7 +138,9 @@ SSH 私钥不得放入 Vault、仓库或备份。
    `codex login --device-auth` 后重跑。第一阶段的 task prompt 仍是占位，因此保持
    `nuc_agent_runner_timer_enabled: false`，不要手工运行 service；以后有具体的
    非确定性任务时再按清单完成“先验收 service、后启用 timer”。
-6. 用 `openssl rand -hex 32` 生成 ops Gateway token，写入已加密 Vault 的
+6. **可选**，默认关闭。ops_agent 以 `nuc_ops_agent_enabled` 为门禁，仓库默认 `false`，
+   不在 local.yml 里显式置 `true` 时整个 role 不执行（`--tags ops_agent` 会静默跳过，
+   不报错）。要启用：用 `openssl rand -hex 32` 生成 ops Gateway token，写入已加密 Vault 的
    `vault_nuc_ops_agent_gateway_token`，运行 `--tags ops_agent`。role 会安装精确 exec
    approvals、policy、loopback Gateway，并依次运行 doctor 与安全审计；随后按清单以
    `solar` 身份完成 OpenAI ChatGPT/Codex device-code OAuth 登录。未登录或存在
