@@ -150,6 +150,18 @@
 - [ ] **人工（仅在启用 relay 时）：以 `<admin>` 身份执行 `paseo daemon pair`。**
   必须先把 `nuc_paseo_relay_enabled` 置 `true` 并跑过 `--tags paseo`，否则 relay
   还是关的。该命令会显示二维码与配对链接，用手机 Paseo app 扫码或粘贴链接完成配对。
+
+  **daemon 开了密码认证时必须带 `PASEO_PASSWORD`**，否则 CLI 连 daemon 会被拒，
+  报的却是 `The running daemon did not provide a pairing offer. Check daemon
+  connectivity or update the daemon.` —— 这句话把人引向连通性和版本，而两者都是好的，
+  真正原因是认证被拒。daemon 日志里对应的是
+  `Rejected WebSocket connection with invalid daemon password`。用不落历史的形式传入：
+
+  ```bash
+  read -rs -p "daemon password: " PASEO_PASSWORD && export PASEO_PASSWORD && paseo daemon pair; unset PASEO_PASSWORD
+  ```
+
+  不要写成 `PASEO_PASSWORD=xxx paseo daemon pair`，那样密码会原样进 shell 历史。
   **不得自动化，也不得把配对链接复制到任何地方**：那个二维码是信任锚，携带 daemon
   公钥，拿到链接即可建立端到端会话。它不进 Vault、不进 group vars、不进 shell 历史、
   不进仓库、不贴给任何人（包括 agent）。
