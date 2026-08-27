@@ -81,9 +81,21 @@
   register: _codex_installer_download
   when: _codex_admin_command.rc != 0
 
+# 官方安装脚本装完之后会问 "Start Codex now?"（install.sh 的 prompt_yes_no）。
+# 它虽然有「没有 TTY 就返回否」的兜底，但实测在 Ansible 的 become 环境下
+# `( : </dev/tty )` 仍然成功，于是走进 read 分支永远阻塞：没有输出、没有报错、
+# 进程既无子进程也无网络连接，是最难判断的一种失败。CODEX_NON_INTERACTIVE
+# 是官方提供的开关（install.sh 第 6、833 行），设为 true 时 prompt_yes_no 直接
+# 返回否，不碰 tty。
+#
+# 外层再套 timeout 是因为上面这条依赖第三方脚本的行为：开关哪天改了名，
+# 有超时至少会失败得干脆，而不是无限期挂住。脚本自己的资源下载超时是 300s，
+# 这里取两倍留出余量。
 - name: 以管理员执行官方 Codex 安装脚本
   ansible.builtin.command:
     argv:
+      - timeout
+      - "600"
       - /bin/sh
       - /tmp/agent-nuc-codex-installer/install.sh
   become: true
@@ -91,12 +103,15 @@
   environment:
     HOME: "{{ nuc_admin_home }}"
     PATH: "{{ nuc_admin_home }}/.local/bin:{{ nuc_admin_home }}/bin:/usr/local/bin:/usr/bin:/bin"
+    CODEX_NON_INTERACTIVE: "true"
   register: _codex_install
   when:
     - not ansible_check_mode
     - _codex_admin_command.rc != 0
   changed_when: _codex_install.rc == 0
   failed_when: _codex_install.rc != 0
+  # rc 124 是 timeout 杀掉进程的返回码；上面的 failed_when 已覆盖，
+  # 这里只是提醒排查时先看是不是又卡在交互提示上。
 
 - name: 清理 Codex 安装器的安全临时目录
   ansible.builtin.file:
