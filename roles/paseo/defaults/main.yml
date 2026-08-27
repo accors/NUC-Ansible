@@ -11,3 +11,10 @@ nuc_nodejs_package_version: ""
 nuc_paseo_cli_version: latest
 nuc_paseo_npm_prefix_relative: .local/npm
 nuc_paseo_password_configured: false
+
+# Paseo relay。默认 false 是安全兜底：启用后 daemon 会主动外连 Paseo 的中继服务，
+# 手机等客户端可以从任何网络到达它，**完全绕过 UFW 与 Cloudflare Access**
+# （连接是 daemon 主动发起的，不需要入站端口）。流量端到端加密
+# （Curve25519 ECDH + XSalsa20-Poly1305），中继只看得到元数据；信任锚是配对二维码，
+# 它携带 daemon 公钥。要用就在不提交的 local.yml 里显式置 true，并按交互清单完成配对。
+nuc_paseo_relay_enabled: false

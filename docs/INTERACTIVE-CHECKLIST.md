@@ -135,7 +135,10 @@
   Codex 路径和 Tailscale 地址；首次执行在写入 `~/.paseo/config.json` 后会因密码门禁
   有意停止。
 - [ ] 检查 `config.json`：`daemon.listen` 是 `0.0.0.0:6767`，`hostnames` 同时含
-  `<100.x>` 与 `nuc_access_hostname`，`relay.enabled` 为 `false`。
+  `<100.x>` 与 `nuc_access_hostname`，`relay.enabled` 等于 `nuc_paseo_relay_enabled`
+  （默认 `false`）。注意合并方向是「既有配置 | combine(契约)」，**契约方胜出** ——
+  手工在 daemon 上开启 relay 而不改这个变量，下一次跑 `--tags paseo` 会被静默关回去，
+  现象是手机突然连不上，且现场看不出原因。
   `hostnames` 里的 `<100.x>` 不可省：它已经不出现在 `listen` 里，但 tailnet 客户端
   仍用它做 Host 校验。删掉之后 tailnet 访问会被拒绝，而现象看起来像「连接被拒绝」，
   很容易误判成网络或防火墙问题。
@@ -144,6 +147,12 @@
   group vars、shell 历史或仓库。
 - [ ] 将 `nuc_paseo_password_configured` 改为 `true`，重跑
   `--tags codex,tailscale,paseo`。
+- [ ] **人工（仅在启用 relay 时）：以 `<admin>` 身份执行 `paseo daemon pair`。**
+  必须先把 `nuc_paseo_relay_enabled` 置 `true` 并跑过 `--tags paseo`，否则 relay
+  还是关的。该命令会显示二维码与配对链接，用手机 Paseo app 扫码或粘贴链接完成配对。
+  **不得自动化，也不得把配对链接复制到任何地方**：那个二维码是信任锚，携带 daemon
+  公钥，拿到链接即可建立端到端会话。它不进 Vault、不进 group vars、不进 shell 历史、
+  不进仓库、不贴给任何人（包括 agent）。
 - [ ] 以管理员身份检查：
 
   ```bash
@@ -450,7 +459,7 @@
 - [ ] 实际断电再上电后，BIOS 自动开机；Debian、网络和受控服务恢复。
 - [ ] LAN 与 Tailscale SSH 均能使用公钥；root/密码登录保持关闭。
 - [ ] `ss -lntp` 显示 Paseo 监听 `0.0.0.0:6767`（这是预期结果，不是配置错误）；
-  ops Gateway 的 18789 只监听 loopback；Paseo relay 关闭。
+  ops Gateway 的 18789 只监听 loopback；Paseo relay 状态与 `nuc_paseo_relay_enabled` 一致。
 - [ ] `ufw status verbose` 里 LAN 访问 6767 被 deny、tailnet 经 `tailscale0` 被 allow。
   **那条 deny 是 6767 在 LAN 侧唯一的隔离手段**，不像别处还有第二层。
 - [ ] 路由器和主机没有公网入站端口，外部访问必须经过 Cloudflare Access；MFA 与

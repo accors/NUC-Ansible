@@ -181,7 +181,10 @@ network → base → ssh_harden → srv_layout → docker → codex → tailscal
         → paseo → cloudflared → agent_runner → ops_agent → restic → copilot
 ```
 
-- Paseo 监听 `0.0.0.0:6767`，relay 关闭；LAN 侧由 UFW 显式拒绝，tailnet 侧由
+- Paseo 监听 `0.0.0.0:6767`，relay 由 `nuc_paseo_relay_enabled` 控制（默认关闭）；
+  **启用 relay 会绕过下面这整套入站隔离** —— 连接由 daemon 主动外连中继建立，
+  不经过 UFW 也不经过 Cloudflare Access，可达性改由配对密钥约束。
+  LAN 侧由 UFW 显式拒绝，tailnet 侧由
   `tailscale0` 的 allow 规则放行，公网入口由 Cloudflare Access 保护。cloudflared 与
   daemon 同机，origin 走 `http://127.0.0.1:6767`，不经过 tailnet 地址——因此
   tailscaled 挂掉只影响 tailnet 那一条路径，Access 路径不受牵连。

@@ -420,7 +420,7 @@
               'daemon': {
                 'listen': '0.0.0.0:' ~ nuc_paseo_port,
                 'hostnames': [nuc_tailscale_ipv4, nuc_access_hostname],
-                'relay': {'enabled': false}
+                'relay': {'enabled': nuc_paseo_relay_enabled | bool}
               }
             },
             recursive=true

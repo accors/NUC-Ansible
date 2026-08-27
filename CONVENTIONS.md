@@ -85,6 +85,7 @@ PDF v1.4 只明确固定 Debian 13.6 与 Node.js 22 LTS。其余软件没有给�
 | `nuc_paseo_cli_version` | string | `latest` | 8.4、8.9 | `@getpaseo/cli` npm 版本 pin |
 | `nuc_paseo_npm_prefix_relative` | path | `.local/npm` | 8.4 | 相对管理员 home 的 npm prefix |
 | `nuc_paseo_password_configured` | boolean | `false` | 8.5、8.6 | 人工执行 `set-password` 后改为 `true`，才允许启用 user unit |
+| `nuc_paseo_relay_enabled` | boolean | `false` | 任务补充 | 启用后 daemon 外连中继，绕过 UFW 与 Cloudflare Access；需按交互清单人工配对 |
 | `nuc_cloudflared_package_version` | string | `""` | 10.3 | 空值表示 Cloudflare 仓库当前候选 |
 | `nuc_cloudflared_enable_service` | boolean | `true` | 10.4 | Dashboard 已建 tunnel 且 vault token 已填后安装/启用 service |
 | `nuc_cloudflared_config_dir` | path | `/etc/cloudflared` | 10.4 | token 文件所在目录，`0700 root:root` |
