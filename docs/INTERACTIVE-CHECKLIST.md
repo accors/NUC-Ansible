@@ -292,6 +292,21 @@
   认证 profile 是按 provider 而非按 agent 存的。注意 `models auth list` 与
   `openclaw agent` 确实支持 `--agent`，别一并改掉。
 
+  **看到 `EACCES: permission denied, open '/etc/openclaw/ops-agent.json.lock'`
+  是预期的，登录并没有失败。** 设备码流程走完后，OpenClaw 会尝试回写配置文件，
+  为此要在同目录建锁文件；而 `/etc/openclaw` 是 `root:solar 0750`，`solar` 拥有
+  配置文件本身却没有目录写权限，于是这一步报错退出。
+
+  认证资料并不在那里——它落在 `OPENCLAW_STATE_DIR` 下的
+  `agents/ops/agent/openclaw-agent.sqlite`，那是 `solar` 自己的目录，写入正常。
+  用下面的 `models auth list` 确认 `type` 为 `oauth` 即可，然后照常重跑
+  `--tags ops_agent`（已实测通过且幂等）。
+
+  **不要为了消掉这个报错给 `solar` 加目录写权限。** 有了目录写权限，`solar`
+  就能删除并重建 `/etc/openclaw/ops-agent-exec-approvals.json` —— 那是 root
+  控制的 exec 白名单，是这个 role 最核心的安全控制之一。用一个良性报错换掉
+  一道真实边界，不划算。
+
   Ansible 不模拟交互式登录，也不复制其他账号的认证文件。完成后以相同环境运行
   `openclaw models auth list --provider openai --agent ops --json`，确认所有 OpenAI profile
   的 `type` 都是 `oauth`，没有 `api_key`，再重跑 `--tags ops_agent`。
