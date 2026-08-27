@@ -95,12 +95,34 @@
       普通失败。Debian trixie 提供 0.18.0，请确认软件源与安装结果。
   when: not (ansible_check_mode | bool)
 
+# restic 的运行环境只在这里组装一次，三处 command 任务共用。
+# 曾经每个任务各自内联 RESTIC_REPOSITORY/RESTIC_PASSWORD，加 S3 后端时
+# 只改了环境文件而漏掉这三处，结果 restic 拿不到凭据、报的是认证错误而非
+# 「仓库不存在」的退出码 10，判定逻辑随之失效。单一来源杜绝这类遗漏。
+- name: 组装 restic 运行环境
+  ansible.builtin.set_fact:
+    _restic_env: >-
+      {{
+        {
+          'RESTIC_REPOSITORY': nuc_restic_repository,
+          'RESTIC_PASSWORD': vault_nuc_restic_password
+        }
+        | combine(
+            {
+              'AWS_ACCESS_KEY_ID': vault_nuc_restic_s3_access_key_id | default(''),
+              'AWS_SECRET_ACCESS_KEY': vault_nuc_restic_s3_secret_access_key | default(''),
+              'AWS_DEFAULT_REGION': nuc_restic_s3_region | default('auto')
+            }
+            if (vault_nuc_restic_s3_access_key_id | default('') | trim | length) > 0
+            else {}
+          )
+      }}
+  no_log: true
+
 - name: 只读探测 Restic 仓库是否存在
   ansible.builtin.command:
     cmd: /usr/bin/restic cat config
-  environment:
-    RESTIC_REPOSITORY: "{{ nuc_restic_repository }}"
-    RESTIC_PASSWORD: "{{ vault_nuc_restic_password }}"
+  environment: "{{ _restic_env }}"
   register: _restic_cat_config
   changed_when: false
   failed_when: _restic_cat_config.rc not in [0, 10, 12]
@@ -141,9 +163,7 @@
 - name: 初始化已确认未初始化的 Restic 仓库
   ansible.builtin.command:
     cmd: /usr/bin/restic init
-  environment:
-    RESTIC_REPOSITORY: "{{ nuc_restic_repository }}"
-    RESTIC_PASSWORD: "{{ vault_nuc_restic_password }}"
+  environment: "{{ _restic_env }}"
   register: _restic_init
   changed_when: _restic_init.rc == 0
   failed_when: _restic_init.rc != 0
@@ -167,9 +187,7 @@
 - name: 读取仓库配置以取得仓库 ID
   ansible.builtin.command:
     cmd: /usr/bin/restic cat config
-  environment:
-    RESTIC_REPOSITORY: "{{ nuc_restic_repository }}"
-    RESTIC_PASSWORD: "{{ vault_nuc_restic_password }}"
+  environment: "{{ _restic_env }}"
   register: _restic_config_final
   changed_when: false
   failed_when: _restic_config_final.rc != 0
