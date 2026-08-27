@@ -737,7 +737,7 @@
     msg: >-
       ops 基础设施、安全审计与 Gateway 已就绪，但 ops 尚无 OpenAI OAuth profile，
       或存在非 OAuth 的 OpenAI profile。请按交互清单以 {{ nuc_ops_agent_user }} 身份运行
-      openclaw models auth login --provider openai --method device-code --agent ops；不要选择
+      openclaw models auth login --provider openai --device-code；不要选择
       API key。完成后重跑 ops_agent tag。Ansible 不代替交互式登录、不复制或备份登录态，
       也不会配置任何 channel。
   when: >-

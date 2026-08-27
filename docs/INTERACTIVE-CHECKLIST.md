@@ -284,8 +284,13 @@
     OPENCLAW_CONFIG_PATH=/etc/openclaw/ops-agent.json \
     OPENCLAW_STATE_DIR=/home/solar/.openclaw \
     /usr/local/bin/openclaw models auth login \
-      --provider openai --method device-code --agent ops
+      --provider openai --device-code
   ```
+
+  `--device-code` 是布尔开关，不是 `--method device-code`；`models auth login`
+  **不接受 `--agent`**（实测 2026.8.1-beta.2 会报 does not recognize option）。
+  认证 profile 是按 provider 而非按 agent 存的。注意 `models auth list` 与
+  `openclaw agent` 确实支持 `--agent`，别一并改掉。
 
   Ansible 不模拟交互式登录，也不复制其他账号的认证文件。完成后以相同环境运行
   `openclaw models auth list --provider openai --agent ops --json`，确认所有 OpenAI profile

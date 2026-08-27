@@ -315,7 +315,7 @@ role tag 与目录名完全相同，`site.yml` 只按下列顺序表达依赖，
 | `paseo daemon set-password` | `config.json` 写入后、启用 user unit 前（8.5、8.6） | 以 `nuc_paseo_password_configured` 为人工确认门禁；为 `false` 时 `fail` |
 | Cloudflare Dashboard 域名、Create tunnel、Published application、Access application/policy/MFA | `cloudflared` 安装 service 前（10.4、10.5） | 不调用 Dashboard/API；只消费 vault token 安装本机 service |
 | 以 agent-runner 运行 `codex login --device-auth` | `agent_runner` 建目录/账号后、启用 automation 前（11.3） | 只运行 `codex login status`；只有 ChatGPT OAuth 登录才通过 |
-| `openclaw models auth login --provider openai --method device-code --agent ops` | `ops_agent` 完成配置、审计和 Gateway 后 | Ansible 只读列出 profile；必须至少一个且所有 OpenAI profile 均为 `oauth` |
+| `openclaw models auth login --provider openai --device-code` | `ops_agent` 完成配置、审计和 Gateway 后 | Ansible 只读列出 profile；必须至少一个且所有 OpenAI profile 均为 `oauth` |
 
 此外，第一阶段必须保持 automation timer 禁用。以后只有在占位 prompt 已替换成具体非确定性任务后，才能由人手工启动一次 service、检查 journal，再把 `nuc_agent_runner_timer_enabled` 改为 `true`。Restic 密码必须另存离线副本；该备份动作也只写入清单。
 
