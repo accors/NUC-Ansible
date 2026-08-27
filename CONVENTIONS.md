@@ -11,9 +11,9 @@
 
 ## 2. 变量命名表
 
-所有非秘密变量使用 `nuc_` 前缀；秘密使用 `vault_nuc_` 前缀。下表列出允许写入 `group_vars/all/main.yml` 的完整变量集合。role 的 `defaults/main.yml` 只能重述自己使用的这些变量，默认值必须一致。
+所有非秘密变量使用 `nuc_` 前缀；秘密使用 `vault_nuc_` 前缀。下表列出允许写入 `group_vars/all/00-contract.yml` 的完整变量集合。role 的 `defaults/main.yml` 只能重述自己使用的这些变量，默认值必须一致。
 
-其中十项是环境相关值：`nuc_hostname`、`nuc_admin_user`、`nuc_admin_authorized_keys`、`nuc_lan_cidr`、`nuc_static_ipv4`、`nuc_lan_gateway`、`nuc_lan_dns`、`nuc_tailscale_ipv4`、`nuc_access_hostname`、`nuc_restic_repository`。它们不写入提交进仓库的 `main.yml`，改由不提交的 `group_vars/all/local.yml` 提供（模板 `local.yml.example` 只含占位符），因此下表中它们的「默认值」列记为 `local.yml`，`main.yml` 与 role 的 `defaults/main.yml` 都不为其设默认值。变量名、类型与语义不受影响。
+其中十项是环境相关值：`nuc_hostname`、`nuc_admin_user`、`nuc_admin_authorized_keys`、`nuc_lan_cidr`、`nuc_static_ipv4`、`nuc_lan_gateway`、`nuc_lan_dns`、`nuc_tailscale_ipv4`、`nuc_access_hostname`、`nuc_restic_repository`。它们不写入提交进仓库的 `00-contract.yml`，改由不提交的 `group_vars/all/local.yml` 提供（模板 `local.yml.example` 只含占位符），因此下表中它们的「默认值」列记为 `local.yml`，`00-contract.yml` 与 role 的 `defaults/main.yml` 都不为其设默认值。变量名、类型与语义不受影响。
 
 ### 2.1 主机、账号与网络
 
@@ -106,7 +106,7 @@ PDF v1.4 只明确固定 Debian 13.6 与 Node.js 22 LTS。其余软件没有给�
 | `nuc_agent_runner_schedule` | string | `*-*-* 07:30:00 Australia/Melbourne` | 11.3 | systemd timer `OnCalendar` |
 | `nuc_agent_runner_randomized_delay` | string | `10m` | 11.3 | timer 随机延迟 |
 | `nuc_agent_runner_timer_enabled` | boolean | `false` | 11.3 | 第一阶段保持 `false`；只有具体 prompt 经人工 service 验收后才改为 `true` |
-| `nuc_restic_repository` | string | `local.yml` | 12.2 | 仓库路径或不含嵌入凭据的远端 URL；会暴露备份位置，不写入 main.yml |
+| `nuc_restic_repository` | string | `local.yml` | 12.2 | 仓库路径或不含嵌入凭据的远端 URL；会暴露备份位置，不写入 00-contract.yml |
 | `nuc_restic_backup_paths` | list[path] | `/srv`、`/etc/ssh`、`/etc/systemd/system`、ops 的 `MEMORY.md`/`memory`/`reports` | 12.1、12.2、任务补充 | 每晚备份范围；不备份可由 Ansible 重建的 ops 指令与 policy |
 | `nuc_restic_excludes` | list[string] | 见下 | 8.2、12.2 | 排除缓存、worktree、依赖与 Codex 登录态 |
 | `nuc_restic_keep` | dict | `{daily: 7, weekly: 4, monthly: 6, yearly: 1}` | 12.2、12.3 | `forget --prune` 保留策略 |
@@ -135,7 +135,11 @@ nuc_restic_excludes:
 
 **模板文件的扩展名必须是 `.yml.example`，不得改成 `.example.yml`**：`group_vars/all/` 下扩展名落在 `YAML_FILENAME_EXTENSIONS`（默认 `['.yml', '.yaml', '.json']`）内的文件**全部会被 Ansible 加载**，模板也不例外。`local.example.yml` 这种命名会被当成真正的变量文件读进来，且字母序排在 `local.yml` 之前——真实文件覆盖它，看起来没问题，但**真实文件里漏填的项会静默落到模板的占位值上，而不是报 undefined variable**。已实测踩中：`vault.yml` 少写 `vault_nuc_ops_agent_gateway_token`，得到的不是失败而是安静的 `CHANGE_ME`。改成 `.yml.example` 后扩展名不在列表内，模板不再参与变量解析，漏填就会响亮地失败。
 
-**加载顺序陷阱（务必遵守）**：`group_vars/all/` 内的文件按**字母序**加载，后加载者覆盖先加载者。`local.yml` 排在 `main.yml` **之前**，因此 `main.yml` 会覆盖 `local.yml`。本机覆盖之所以成立，唯一原因是 `main.yml` 对这些变量**只写注释、不给定义**。一旦有人出于「补全文档」把某个本机变量在 `main.yml` 里赋了值，`local.yml` 就会静默失效，而现象是「我明明改了 local.yml 却没生效」，极难定位。安全兜底放在 role 的 `defaults/main.yml`（优先级最低），由 `local.yml` 覆盖。已实测确认：`main.yml` 定义时其值胜出；`main.yml` 不定义时 `local.yml` 胜过 role defaults。
+**加载顺序**：`group_vars/all/` 内的文件按**字母序**加载，后加载者覆盖先加载者。契约文件因此命名为 `00-contract.yml`，排在 `local.yml` **之前**，本机值天然覆盖契约默认值。**这个数字前缀是有意的，不得改名**。
+
+此前该文件叫 `main.yml`，字母序排在 `local.yml` **之后**，于是契约文件反过来覆盖本机文件——与所有人的直觉相反。当时靠「`main.yml` 对本机变量只写注释、不赋值」这条纪律维持，而纪律先后被破三次并造成实际故障：`nuc_ops_agent_enabled`（门禁打不开）、`nuc_paseo_password_configured`（改了 local.yml 仍卡在门禁）、`nuc_restic_expected_repository_id`（被覆盖成空值，导致仓库身份校验被静默跳过，校验与它要防的故障一起消失）。改名后这一整类问题在结构上消失，不再依赖任何人记得那条纪律。
+
+三层优先级由低到高：role 的 `defaults/main.yml` < `00-contract.yml` < `local.yml`。已实测确认。
 
 | 变量 | 用途 | 来源 |
 |---|---|---|

@@ -56,7 +56,7 @@
 # nuc_restic_repository     string
 #   Restic 备份仓库地址：本地路径或远端 URL（sftp:/s3:/rest: 等）。URL 中不得嵌入
 #   账号、密码或 token，凭据一律走 vault_nuc_restic_password。该地址会暴露备份位置
-#   与内网主机名，因此不写入提交进仓库的 main.yml。（CONVENTIONS 2.4、PDF 12.2）
+#   与内网主机名，因此不写入提交进仓库的 00-contract.yml。（CONVENTIONS 2.4、PDF 12.2）
 
 # --- 以下为非环境相关的默认值，随 repo 提交 ---
 nuc_paseo_port: 6767
@@ -167,9 +167,9 @@ nuc_paseo_npm_prefix_relative: .local/npm
 
 # nuc_paseo_password_configured 刻意不在此处赋值。
 #
-# group_vars/all/ 按字母序加载且后者覆盖前者，main.yml 排在 local.yml 之后，
-# 因此只要这里给了值，local.yml 里改成 true 就会被静默覆盖，现象是
-# 「我明明改了 local.yml 却还是卡在密码门禁」。安全兜底放在
+# 本文件按字母序排在 local.yml 之前，local.yml 会覆盖这里的值。但这些人工门禁
+# 变量仍然不该在此赋值：它们是本机状态，写进提交进仓库的文件等于把某台机器的
+# 一次性状态变成所有部署的默认值。安全兜底放在
 # roles/paseo/defaults/main.yml（优先级最低，值为 false），人工执行
 # `paseo daemon set-password` 之后在不提交的 local.yml 里改成 true。
 # 同一处理方式见 nuc_ops_agent_enabled。
@@ -187,7 +187,7 @@ nuc_agent_runner_randomized_delay: 10m
 nuc_agent_runner_timer_enabled: false
 
 # nuc_ops_agent_enabled 是本机部署选择，由不提交的 local.yml 提供，此处不定义。
-# 注意：group_vars/all/ 按字母序加载且后者覆盖前者，main.yml 在 local.yml 之后，
+# 注意：本文件提交进仓库，因此不放本机状态；
 # 一旦在这里给出定义就会盖掉 local.yml 的值。role defaults 里的 false 是安全兜底。
 nuc_ops_agent_user: solar
 nuc_ops_agent_home: /home/solar
@@ -228,8 +228,8 @@ nuc_restic_initialize_repository: false
 # 留空表示不校验仓库身份。
 # nuc_restic_expected_repository_id 刻意不在此处赋值。
 #
-# 它是首次 init 后由 `restic cat config` 实测得到的本机值。main.yml 排在
-# local.yml 之后加载，这里给了值就会静默覆盖 local.yml，导致仓库身份校验
-# 永远处于"未设置、跳过校验"状态——而这道校验的作用恰恰是防止静默换库。
+# 它是首次 init 后由 `restic cat config` 实测得到的本机值，属于 local.yml。
+# 写在提交进仓库的文件里没有意义，也容易让人以为空字符串是"正确默认值"，
+# 而空值意味着仓库身份校验被跳过——那道校验的作用恰恰是防止静默换库。
 # 安全兜底在 roles/restic/defaults/main.yml（空字符串，跳过校验）。
 nuc_restic_enable_timer: true

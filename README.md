@@ -44,8 +44,9 @@ cp files/preseed.example.cfg files/preseed.cfg
 | `inventory.yml` | NUC 的 LAN 地址与 `ansible_user` |
 | `files/preseed.cfg` | 管理员用户名、密码哈希、SSH 公钥 |
 
-`group_vars/all/` 下的 yml 按字母序加载且后者覆盖前者，`local.yml` 排在 `main.yml`
-之后，因此不需要额外配置。每一项的用途、实测命令与约束见 `main.yml` 顶部的注释，
+`group_vars/all/` 下的 yml 按字母序加载且后者覆盖前者。契约文件命名为
+`00-contract.yml`，排在 `local.yml` **之前**，因此本机值天然覆盖契约默认值，
+不需要额外配置。每一项的用途、实测命令与约束见 `00-contract.yml` 顶部的注释，
 变量清单以 `CONVENTIONS.md` 第 2 节为准。
 
 `nuc_admin_authorized_keys` 必须至少包含一把**已经验证过能登录**的公钥，并且要覆盖
