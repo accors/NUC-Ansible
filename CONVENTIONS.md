@@ -40,6 +40,8 @@
 | `nuc_ops_agent_home` | path | `/home/solar` | 任务补充 | 独立账号 home，必须为 `0700` |
 | `nuc_ops_agent_workspace` | path | `/var/lib/openclaw-ops-agent/workspace` | 任务补充 | root 控制启动指令；只给 memory/reports 运行时写权限 |
 | `nuc_ops_agent_gateway_port` | integer | `18789` | OpenClaw 官方默认 | 只允许 loopback Gateway 使用，不加入 UFW 放行端口 |
+| `nuc_ops_agent_model` | string | `openai/gpt-5.6-terra` | 任务补充 | 同时写进 `model.primary` 与 `agents.defaults.models` 允许列表；取决于账号套餐 |
+| `nuc_ops_agent_thinking_level` | string | `medium` | 任务补充 | `agents.defaults.thinkingDefault`；合法值 `off\|minimal\|low\|medium\|high\|xhigh\|adaptive\|max` |
 | `nuc_timezone` | string | `Australia/Melbourne` | 5、13.2 | timer 与主机使用的时区 |
 | `nuc_debian_codename` | string | `trixie` | 4、9.2 | 第三方 APT 仓库发行代号 |
 | `nuc_architecture` | string | `amd64` | 4、9.2 | APT 仓库架构 |

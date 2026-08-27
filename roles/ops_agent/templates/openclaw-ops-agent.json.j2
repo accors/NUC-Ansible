@@ -11,6 +11,9 @@
          不可路由时 openclaw 报 "Unable to materialize <model> for its prepared
          subscription route"，而错误信息不会说明是套餐问题。 #}
       "model": { "primary": {{ nuc_ops_agent_model | to_json }} },
+      {# 思考强度的全局默认。ops 不设 per-agent 覆盖，也没有会话级覆盖，
+         因此这就是实际生效值。省略时会落到 provider 声明的默认值。 #}
+      "thinkingDefault": {{ nuc_ops_agent_thinking_level | to_json }},
       "models": {
         {{ nuc_ops_agent_model | to_json }}: {
           "agentRuntime": { "id": "openclaw" }

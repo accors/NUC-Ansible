@@ -193,6 +193,11 @@ nuc_ops_agent_user: solar
 nuc_ops_agent_home: /home/solar
 nuc_ops_agent_workspace: /var/lib/openclaw-ops-agent/workspace
 nuc_ops_agent_gateway_port: 18789
+# 模型 ID 与思考强度：取决于账号的订阅套餐，不是本机密钥，因此放在契约里。
+# 模型这一个变量同时写进 agents.defaults.model.primary 与 agents.defaults.models
+# 的允许列表，改一处即同时改掉「用什么」和「允许什么」。
+nuc_ops_agent_model: openai/gpt-5.6-terra
+nuc_ops_agent_thinking_level: medium
 nuc_openclaw_version: 2026.8.1-beta.3
 
 nuc_restic_package_version: ""
