@@ -10,6 +10,30 @@ set -eu
 : "${RESTIC_PASSWORD:?RESTIC_PASSWORD 未设置}"
 export RESTIC_REPOSITORY RESTIC_PASSWORD
 
+# 实测：restic 0.18.0 在备份路径不存在时**退出码仍是 0**，静默生成一个只包含
+# 存在路径的快照。也就是说任何一个路径消失（目录改名、ops_agent 被关掉、
+# role 调整），备份会继续每晚报 ok，而那部分数据已经不在保护范围内 ——
+# 直到需要恢复那天才发现。这与「连错仓库、备份照样成功、历史快照一个都不在」
+# 是同一类故障，仓库已对后者设防，这里补上前者。
+#
+# 路径缺失时立即失败：set -e 会中止脚本，service 的 OnFailure 把状态写成
+# failed。若确实要缩减备份范围（例如关闭 ops_agent），应同时改
+# nuc_restic_backup_paths，而不是让脚本容忍缺失。
+#
+# 用函数而不是 `for ... \` 多行续行：续行写法里最后一项后面的换行会终止词表，
+# 下一行的 `; do` 变成语法错误，而这种错误只有真正执行时才暴露。
+_require_path() {
+  if [ ! -e "$1" ]; then
+    echo "备份路径不存在：$1" >&2
+    echo "restic 对缺失路径返回 0 并静默跳过，因此这里主动失败，避免留下一个" >&2
+    echo "报告成功却不完整的快照。请修复该路径，或相应调整 nuc_restic_backup_paths。" >&2
+    exit 1
+  fi
+}
+{% for path in nuc_restic_backup_paths %}
+_require_path {{ path | quote }}
+{% endfor %}
+
 # 备份完成后才执行 forget；set -e 保证任一步失败都会使 service 失败。
 /usr/bin/restic backup \
 {% for path in nuc_restic_backup_paths %}

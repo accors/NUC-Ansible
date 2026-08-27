@@ -231,6 +231,10 @@
     path: /etc/systemd/system/agent-restic-backup.timer
   register: _restic_timer_unit
 
+# validate 不可省：这个脚本此前是唯一没有语法校验的模板，而 sshd 配置有
+# `sshd -t`、daemon.json 有 `json.tool`。渲染出语法错误的 shell 脚本只有等到
+# nightly timer 真正触发时才暴露，届时只能看到 status=2/INVALIDARGUMENT，
+# 而备份已经连着几晚没跑。
 - name: 安装 Restic 备份包装脚本
   ansible.builtin.template:
     src: agent-restic-backup.j2
@@ -238,6 +242,7 @@
     owner: root
     group: root
     mode: "0750"
+    validate: /bin/sh -n %s
   notify: "restic | daemon-reload system units"
 
 - name: 安装 Restic nightly service
