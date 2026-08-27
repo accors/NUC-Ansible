@@ -164,7 +164,15 @@ nuc_nodejs_major: 22
 nuc_nodejs_package_version: ""
 nuc_paseo_cli_version: latest
 nuc_paseo_npm_prefix_relative: .local/npm
-nuc_paseo_password_configured: false
+
+# nuc_paseo_password_configured 刻意不在此处赋值。
+#
+# group_vars/all/ 按字母序加载且后者覆盖前者，main.yml 排在 local.yml 之后，
+# 因此只要这里给了值，local.yml 里改成 true 就会被静默覆盖，现象是
+# 「我明明改了 local.yml 却还是卡在密码门禁」。安全兜底放在
+# roles/paseo/defaults/main.yml（优先级最低，值为 false），人工执行
+# `paseo daemon set-password` 之后在不提交的 local.yml 里改成 true。
+# 同一处理方式见 nuc_ops_agent_enabled。
 
 nuc_cloudflared_package_version: ""
 nuc_cloudflared_enable_service: true

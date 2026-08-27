@@ -1,25 +1,17 @@
 {#
-  daemon.listen 监听全接口，LAN 侧的隔离交由 UFW 完成（base role 的 deny 规则）。
-  不绑定 tailscale0 的地址：那会让 daemon 依赖 tailscaled 存活，tailscaled 一挂
-  连 Cloudflare 那条路径也会断，而 cloudflared 与 daemon 本就在同一台机器上。
+  本文件由 roles/paseo/tasks/main.yml 递归合并后渲染，不要在这里写死结构：
+  `paseo daemon set-password` 会把密码哈希写进同一个文件的 daemon.auth.password，
+  该密码按契约不进 Vault、也不进模板，整体覆盖会把它抹掉。契约内的键在 task 的
+  combine 里定义，契约外的既有键原样保留。
 
-  hostnames 仍必须包含 nuc_tailscale_ipv4：tailnet 客户端用它做 Host 校验，
-  删掉之后会被拒绝，且现象表现为「连接被拒绝」，极难定位。
+  契约内三条约束的理由：
+  - daemon.listen 监听全接口，LAN 侧隔离交由 UFW（base role 的 deny 规则）。
+    不绑定 tailscale0 地址：那会让 daemon 依赖 tailscaled 存活，tailscaled 一挂
+    连 Cloudflare 那条路径也会断，而 cloudflared 与 daemon 本就在同一台机器上。
+  - daemon.hostnames 必须包含 nuc_tailscale_ipv4：tailnet 客户端用它做 Host 校验，
+    删掉之后会被拒绝，且现象表现为「连接被拒绝」，极难定位。
+  - features.webUi 走配置而非 ExecStart 参数，否则会进入 overrideControlledPaths。
 
-  本文件按严格 JSON 渲染，不得引入 // 注释。
+  按严格 JSON 渲染，不得引入 // 注释。
 #}
-{
-  "$schema": "https://paseo.sh/schemas/paseo.config.v1.json",
-  "version": 1,
-  "features": {
-    "webUi": { "enabled": true }
-  },
-  "daemon": {
-    "listen": "0.0.0.0:{{ nuc_paseo_port }}",
-    "hostnames": [
-      "{{ nuc_tailscale_ipv4 }}",
-      "{{ nuc_access_hostname }}"
-    ],
-    "relay": { "enabled": false }
-  }
-}
+{{ _paseo_merged_config | to_nice_json }}

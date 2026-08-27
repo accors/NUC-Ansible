@@ -360,6 +360,73 @@
     group: "{{ nuc_admin_user }}"
     mode: '0700'
 
+# config.json 不能整体覆盖：`paseo daemon set-password` 会把密码哈希写进
+# 同一个文件的 daemon.auth.password，而这个密码按契约（CONVENTIONS 2.5）
+# 不进 Vault、也不进模板——它由人工设置，Ansible 不该知道它。整体覆盖会在
+# 每次重跑 paseo tag 时把它抹掉，而故障要等到下次需要登录才暴露。
+# 处理方式与 /etc/docker/daemon.json 相同：递归合并，契约内的键由模板决定，
+# 契约外的既有键（daemon.auth 等）原样保留。
+- name: 探测现有 Paseo config.json
+  ansible.builtin.stat:
+    path: "{{ nuc_admin_home }}/.paseo/config.json"
+  register: _paseo_config_stat
+
+- name: 没有现有 config.json 时从空对象开始
+  ansible.builtin.set_fact:
+    _paseo_existing_config: {}
+  when: not _paseo_config_stat.stat.exists
+
+- name: 解析现有 config.json
+  when: _paseo_config_stat.stat.exists
+  block:
+    - name: 读取现有 config.json
+      ansible.builtin.slurp:
+        src: "{{ nuc_admin_home }}/.paseo/config.json"
+      register: _paseo_config_slurp
+
+    - name: 将现有 config.json 解析为 JSON 对象
+      ansible.builtin.set_fact:
+        _paseo_existing_config: "{{ _paseo_config_slurp.content | b64decode | from_json }}"
+  rescue:
+    - name: 现有 config.json 无效时明确中止
+      ansible.builtin.fail:
+        msg: >-
+          {{ nuc_admin_home }}/.paseo/config.json 不是合法 JSON，已停止而未覆盖原文件。
+          请先人工修复该文件，再重跑 paseo tag。直接覆盖会连同人工设置的
+          daemon.auth.password 一起丢掉。
+
+- name: 校验现有 config.json 为对象
+  ansible.builtin.assert:
+    that:
+      - _paseo_existing_config is mapping
+      - _paseo_existing_config.get('daemon', {}) is mapping
+    fail_msg: >-
+      现有 config.json 必须是 JSON 对象且 daemon（若存在）必须是对象；
+      为避免丢失人工设置的密码，未写入合并结果。
+    quiet: true
+
+# hostnames 是列表，combine(recursive=true) 对列表是整体替换而非追加，
+# 因此契约里的两项始终是最终值，不会累积历史地址。
+- name: 递归合并 Paseo 契约配置并保留 daemon.auth 等既有键
+  ansible.builtin.set_fact:
+    _paseo_merged_config: >-
+      {{
+        _paseo_existing_config
+        | combine(
+            {
+              '$schema': 'https://paseo.sh/schemas/paseo.config.v1.json',
+              'version': 1,
+              'features': {'webUi': {'enabled': true}},
+              'daemon': {
+                'listen': '0.0.0.0:' ~ nuc_paseo_port,
+                'hostnames': [nuc_tailscale_ipv4, nuc_access_hostname],
+                'relay': {'enabled': false}
+              }
+            },
+            recursive=true
+          )
+      }}
+
 - name: 写入 Paseo 唯一配置来源
   ansible.builtin.template:
     src: config.json.j2
@@ -367,6 +434,7 @@
     owner: "{{ nuc_admin_user }}"
     group: "{{ nuc_admin_user }}"
     mode: '0600'
+    validate: /usr/bin/python3 -m json.tool %s
   notify: paseo | restart paseo
 
 - name: 在未完成人工设密码时停止
