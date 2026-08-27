@@ -3,3 +3,10 @@
 vault_nuc_restic_password: CHANGE_ME
 vault_nuc_cloudflared_tunnel_token: CHANGE_ME
 vault_nuc_ops_agent_gateway_token: CHANGE_ME
+
+# 仅在 nuc_restic_repository 使用 s3: 后端时需要（Cloudflare R2、AWS S3、MinIO）。
+# 本地路径或 SFTP 仓库留空即可，留空时不会写进 restic 的环境文件。
+# R2 在 Dashboard 的 R2 → Manage R2 API Tokens 创建，权限选 Object Read & Write
+# 并限定到单个 bucket，不要用 Admin。
+vault_nuc_restic_s3_access_key_id: ""
+vault_nuc_restic_s3_secret_access_key: ""

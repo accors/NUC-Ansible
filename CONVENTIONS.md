@@ -94,6 +94,7 @@ PDF v1.4 只明确固定 Debian 13.6 与 Node.js 22 LTS。其余软件没有给�
 | `nuc_restic_status_file` | path | `/var/lib/agent-restic/last-run.status` | 任务补充 | 单行 `ok`/`failed` 加 ISO 时间戳 |
 | `nuc_restic_status_helper` | path | `/usr/local/sbin/agent-restic-status` | 任务补充 | 状态写入的唯一入口，成功与失败两条路径共用 |
 | `nuc_restic_package_version` | string | `""` | 6.1、12.2 | 空值表示 Debian 13.6 当前候选 |
+| `nuc_restic_s3_region` | string | `auto` | 任务补充 | S3 类后端的区域；Cloudflare R2 要求固定为 `auto`，AWS S3/MinIO 填各自真实区域。仅在配了 S3 凭据时写入环境文件 |
 
 ### 2.4 agent-runner、ops_agent 与 Restic
 
@@ -141,6 +142,8 @@ nuc_restic_excludes:
 | `vault_nuc_restic_password` | Restic 独立随机长密码 | 12.2 |
 | `vault_nuc_cloudflared_tunnel_token` | Dashboard 创建 tunnel 后得到的 service token | 10.4 |
 | `vault_nuc_ops_agent_gateway_token` | loopback ops Gateway 的独立随机 token；目标机上通过 file SecretRef 读取 | 任务补充 |
+| `vault_nuc_restic_s3_access_key_id` | S3 类后端（R2/S3/MinIO）的 Access Key ID；仅在 `nuc_restic_repository` 以 `s3:` 开头时必需 | 任务补充 |
+| `vault_nuc_restic_s3_secret_access_key` | 对应的 Secret Access Key；与上一项同进同出 | 任务补充 |
 
 下列内容不进入 Ansible Vault：管理员 `~/.codex/auth.json`、agent-runner
 `CODEX_HOME` 与 ops OpenClaw state 内的 OAuth 登录缓存、Paseo 内层密码、个人 SSH
@@ -260,6 +263,7 @@ role tag 与目录名完全相同，`site.yml` 只按下列顺序表达依赖，
 - `restic` 的仓库存在性判定必须用 `restic cat config` 的退出码（10 = 仓库不存在，12 = 密码错误），不得匹配英文错误文本——文本随版本与 locale 变化。因此 role 必须先断言 restic ≥ 0.17.1，否则判定会静默失效。
 - `cloudflared` 不得使用 `cloudflared service install`：该命令需要 `creates:` 才幂等，而 `creates:` 会让 unit 存在后永不重跑，vault 中轮换 token 后本机不再收敛。token 文件与 unit 一律由 Ansible 的 `copy`/`template` 管理，二者都 `notify` 重启；token 只走 `--token-file`，不得进入 `ExecStart` 文本或命令行。
 - `docker` 必须读取并递归合并现有 `/etc/docker/daemon.json`，保留契约外已有键；不得整体覆盖。
+- Restic 的 S3 类凭据只写进 `nuc_restic_env_file`（`0600 root:root`，写入任务 `no_log`），**不得嵌入 `nuc_restic_repository`**。仓库地址会出现在日志、`systemctl show` 与备份状态里，嵌入密钥等于把它散播到这些地方。仓库以 `s3:` 开头时 role 必须先断言凭据非空——缺凭据时 restic 报的是含糊的认证/连接错误，指向网络或地址而非真正原因。
 - 用 `ansible.builtin.stat` 判定**可执行文件**时必须写 `follow: true`。npm 全局安装与 Codex 官方安装脚本装出来的都是符号链接（实测 `/usr/local/bin/<pkg>` → `../lib/node_modules/…`，`~/.local/bin/codex` → `packages/standalone/current/bin/codex`），`stat` 默认不跟随链接会得到 `isreg=False`，而 `isreg` 判定会把一个完全可用的可执行文件判成缺失。apt 装的二进制是常规文件，加 `follow: true` 也无害。
 - `base` 必须先写入 Debian 官方 APT 源再做任何 apt 操作。用完整 DVD ISO 离线安装且跳过网络镜像时，安装器会在装完后注释掉 cdrom 源，系统里一个可用源都不剩。
 - **`cache_valid_time` 只比对 `/var/lib/apt/lists` 的目录 mtime，不看目录里有没有内容。** 空目录只要 mtime 够新（DVD 装机后正是如此），`apt` 模块就判定缓存有效、跳过 update 并报 `ok`，而列表自始至终是空的；随后 `full-upgrade` 报 `ok`、装包报 `No package matching 'curl' is available` —— 这条错误指向包名，和真正的原因完全对不上。因此 `base` 必须在 update 之后**实测**包列表非空，为空时以 `cache_valid_time: 0` 强制刷新，复查仍为空才失败。已实测复现并验证自愈。

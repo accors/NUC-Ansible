@@ -2,6 +2,10 @@
 # Restic role 只重述共享契约中属于本 role 的默认值。
 nuc_restic_package_version: ""
 nuc_restic_repository: CHANGE_ME
+
+# S3 类后端的区域。Cloudflare R2 要求固定为 auto；换成 AWS S3 或 MinIO 时
+# 填各自的真实区域。仅在 vault 里配了 S3 凭据时才写进环境文件。
+nuc_restic_s3_region: auto
 nuc_restic_backup_paths:
   - /srv
   - /etc/ssh

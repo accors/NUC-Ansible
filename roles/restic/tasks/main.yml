@@ -48,6 +48,23 @@
     group: root
     mode: "0700"
 
+# s3: 后端缺凭据时，restic 报的是含糊的认证/连接错误，指向的是网络或地址，
+# 而真正的原因是 vault 里没填 key。这里提前拦住并说清楚。
+# 断言只判断长度，不引用值，避免密钥进入 assert 的输出。
+- name: 使用 s3 后端时校验 S3 凭据已填写
+  ansible.builtin.assert:
+    that:
+      - (vault_nuc_restic_s3_access_key_id | default('') | trim | length) > 0
+      - (vault_nuc_restic_s3_secret_access_key | default('') | trim | length) > 0
+      - (nuc_restic_s3_region | default('') | trim | length) > 0
+    fail_msg: >-
+      nuc_restic_repository 使用 s3: 后端，但 vault 中的
+      vault_nuc_restic_s3_access_key_id / vault_nuc_restic_s3_secret_access_key
+      为空。请在加密的 group_vars/all/vault.yml 中填入 R2（或其他 S3 兼容服务）
+      的 API 凭据；不要把它们写进仓库地址。Cloudflare R2 的区域固定为 auto。
+    quiet: true
+  when: nuc_restic_repository is match('^s3:')
+
 - name: 写入 root-only Restic 环境文件
   ansible.builtin.template:
     src: agent-nuc.env.j2
