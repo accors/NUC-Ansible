@@ -161,6 +161,38 @@
   地址上监听，改动后是监听着但被过滤器挡住。排查时不要把「探测不通」当成
   「daemon 没起来」的证据，先看 `ss -lntp` 和 `ufw status verbose`。
 
+- [ ] **通过域名远程访问 Paseo web UI 时的连接参数**（D 节配好 Cloudflare 之后才可用）。
+  浏览器打开 `https://<nuc_access_hostname>`，过完 Access 登录后会出现「输入 Paseo
+  server 的地址」表单。**它的默认值在这个场景下三项全错**，逐项改：
+
+  | 字段 | 默认值 | 应填 | 理由 |
+  |---|---|---|---|
+  | Host | `localhost` | `<nuc_access_hostname>` | 表单默认连本机 |
+  | 端口 | `6767` | **`443`** | `6767` 是 daemon 在 NUC 上的监听端口，Cloudflare **不对外暴露**它；隧道把域名映射到 origin 的 `127.0.0.1:6767`，对外始终是 HTTPS 的 443 |
+  | 使用 SSL | 未勾 | **勾上** | 页面是 `https://`，连接必须是 `wss://`；不勾会生成 `tcp://`，被浏览器当混合内容拦掉 |
+  | 密码 | 空 | 上一步 `set-password` 设的密码 | 不填时 daemon 以 `4401 Password required` 关闭连接 |
+
+  填完确认「高级」那栏变成 `wss://`/`tcps://` 加 443 的形式；若仍显示
+  `tcp://...:6767`，说明前两项没生效，别点连接。
+
+- [ ] **这一步的排错须知。** 参数不对时的报错是
+  `无法连接到 tcp://localhost:6767 ... Transport closed (code 1006)` ——
+  **这是表单用默认值连本机失败后的产物，不是真实原因**，它既不指向域名也不指向
+  Cloudflare，极易把人引向隧道、Access、zone 的 WebSockets 开关等无关方向。
+
+  一条命令就能分清是哪一层的问题，在浏览器控制台直接发裸 WebSocket：
+
+  ```javascript
+  const ws=new WebSocket('wss://<nuc_access_hostname>/ws');
+  ws.onopen=()=>console.log('OPEN');
+  ws.onclose=e=>console.log('CLOSED',e.code,e.reason);
+  ```
+
+  它把 Access、隧道、Host 校验、daemon 每一层都走一遍，并带回服务端的真实理由：
+  `OPEN` 后收到 `4401 Password required` 说明整条链路都是通的、只差密码；
+  连 `OPEN` 都没有才轮到怀疑 Cloudflare。**不要只看 daemon 侧的计数器**——
+  计数器为零同时符合「被中间层挡掉」和「客户端压根没发」两种情况，分不清。
+
 ## D. Cloudflare 外部入口：`cloudflared` 之前
 
 - [ ] **人工：在 Cloudflare Dashboard 接入域名**（PDF 10.3-10.5）。
