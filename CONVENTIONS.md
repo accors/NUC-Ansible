@@ -267,6 +267,8 @@ role tag 与目录名完全相同，`site.yml` 只按下列顺序表达依赖，
 - `restic` 的仓库存在性判定必须用 `restic cat config` 的退出码（10 = 仓库不存在，12 = 密码错误），不得匹配英文错误文本——文本随版本与 locale 变化。因此 role 必须先断言 restic ≥ 0.17.1，否则判定会静默失效。
 - `cloudflared` 不得使用 `cloudflared service install`：该命令需要 `creates:` 才幂等，而 `creates:` 会让 unit 存在后永不重跑，vault 中轮换 token 后本机不再收敛。token 文件与 unit 一律由 Ansible 的 `copy`/`template` 管理，二者都 `notify` 重启；token 只走 `--token-file`，不得进入 `ExecStart` 文本或命令行。
 - `docker` 必须读取并递归合并现有 `/etc/docker/daemon.json`，保留契约外已有键；不得整体覆盖。
+- **只读探测类的 `command`/`shell` 任务必须写 `check_mode: false`。** check 模式下被跳过的 command/shell 注册的是 `{'rc': 0, 'stdout': '', 'skipped': True, 'msg': 'Command would have run if not in check mode'}` —— `rc` 为 `0`、`stdout` 为空，**伪装成「命令成功且没有输出」**。下游只判断 `rc == 0` 会误认为探测通过，再拿空 `stdout` 去做格式校验就必然误报。已实测踩中两次：`codex` 报「`command -v codex` 没有返回绝对路径」、`tailscale` 报「没有返回唯一的 IPv4」，两者都让全量 `--check --diff` 无法跑完——而那正是第 4 节要求的幂等验证手段。只读探测加上 `check_mode: false` 后，check 模式会真正校验实际状态，而不是跳过校验。
+- 已知的 check 模式假阳性（**不是缺陷，不要为消掉它们加代码**）：`get_url` 带 `force: false` 且目标已存在时仍报 `changed`（无法验证远端），`apt` 的 `update_cache` 同理。判断幂等以**实跑模式**的 `changed=0` 为准。
 - Restic 的 S3 类凭据只写进 `nuc_restic_env_file`（`0600 root:root`，写入任务 `no_log`），**不得嵌入 `nuc_restic_repository`**。仓库地址会出现在日志、`systemctl show` 与备份状态里，嵌入密钥等于把它散播到这些地方。仓库以 `s3:` 开头时 role 必须先断言凭据非空——缺凭据时 restic 报的是含糊的认证/连接错误，指向网络或地址而非真正原因。
 - 用 `ansible.builtin.stat` 判定**可执行文件**时必须写 `follow: true`。npm 全局安装与 Codex 官方安装脚本装出来的都是符号链接（实测 `/usr/local/bin/<pkg>` → `../lib/node_modules/…`，`~/.local/bin/codex` → `packages/standalone/current/bin/codex`），`stat` 默认不跟随链接会得到 `isreg=False`，而 `isreg` 判定会把一个完全可用的可执行文件判成缺失。apt 装的二进制是常规文件，加 `follow: true` 也无害。
 - `base` 必须先写入 Debian 官方 APT 源再做任何 apt 操作。用完整 DVD ISO 离线安装且跳过网络镜像时，安装器会在装完后注释掉 cdrom 源，系统里一个可用源都不剩。

@@ -101,6 +101,10 @@
       - /usr/bin/tailscale
       - ip
       - -4
+  # check_mode: false —— 只读探测，check 模式下必须照跑。被跳过的 command
+  # 注册的是 rc=0、stdout_lines=[]，伪装成「命令成功但没有输出」，下游会把空
+  # 列表当成真实结果，断言 length == 1 必然失败。
+  check_mode: false
   register: _tailscale_ip_probe
   changed_when: false
   failed_when: false

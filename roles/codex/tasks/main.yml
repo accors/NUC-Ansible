@@ -56,6 +56,12 @@
   environment:
     HOME: "{{ nuc_admin_home }}"
     PATH: "{{ nuc_admin_home }}/.local/bin:{{ nuc_admin_home }}/bin:/usr/local/bin:/usr/bin:/bin"
+  # check_mode: false —— 这是只读探测，check 模式下必须照跑。被跳过的
+  # command/shell 注册的是 {'rc': 0, 'stdout': '', 'skipped': True}，rc 为 0、
+  # stdout 为空，伪装成「命令成功且无输出」，下游只看 rc 就会误判为探测通过，
+  # 再拿空 stdout 去匹配就必然误报，导致全量 --check --diff 跑不完 ——
+  # 而那正是 README 第 4 节要求的幂等验证手段。
+  check_mode: false
   register: _codex_admin_command
   changed_when: false
   failed_when: false
@@ -132,6 +138,12 @@
   environment:
     HOME: "{{ nuc_admin_home }}"
     PATH: "{{ nuc_admin_home }}/.local/bin:{{ nuc_admin_home }}/bin:/usr/local/bin:/usr/bin:/bin"
+  # check_mode: false —— 这是只读探测，check 模式下必须照跑。被跳过的
+  # command/shell 注册的是 {'rc': 0, 'stdout': '', 'skipped': True}，rc 为 0、
+  # stdout 为空，伪装成「命令成功且无输出」，下游只看 rc 就会误判为探测通过，
+  # 再拿空 stdout 去匹配就必然误报，导致全量 --check --diff 跑不完 ——
+  # 而那正是 README 第 4 节要求的幂等验证手段。
+  check_mode: false
   register: _codex_admin_bin_probe
   changed_when: false
   failed_when: false
