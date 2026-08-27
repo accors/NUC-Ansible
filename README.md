@@ -176,7 +176,7 @@ SSH 私钥不得放入 Vault、仓库或备份。
 
 ```text
 network → base → ssh_harden → srv_layout → docker → codex → tailscale
-        → paseo → cloudflared → agent_runner → ops_agent → restic
+        → paseo → cloudflared → agent_runner → ops_agent → restic → copilot
 ```
 
 - Paseo 监听 `0.0.0.0:6767`，relay 关闭；LAN 侧由 UFW 显式拒绝，tailnet 侧由

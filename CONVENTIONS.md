@@ -94,6 +94,8 @@ PDF v1.4 只明确固定 Debian 13.6 与 Node.js 22 LTS。其余软件没有给�
 | `nuc_restic_status_file` | path | `/var/lib/agent-restic/last-run.status` | 任务补充 | 单行 `ok`/`failed` 加 ISO 时间戳 |
 | `nuc_restic_status_helper` | path | `/usr/local/sbin/agent-restic-status` | 任务补充 | 状态写入的唯一入口，成功与失败两条路径共用 |
 | `nuc_restic_package_version` | string | `""` | 6.1、12.2 | 空值表示 Debian 13.6 当前候选 |
+| `nuc_copilot_package` | string | `@github/copilot` | 任务补充 | GitHub Copilot CLI 的 npm 包名 |
+| `nuc_copilot_version` | string | `latest` | 任务补充 | 版本 pin；为 `latest` 时必须省略 `@version`，否则每次重装（陷阱第 11 条） |
 | `nuc_restic_s3_region` | string | `auto` | 任务补充 | S3 类后端的区域；Cloudflare R2 要求固定为 `auto`，AWS S3/MinIO 填各自真实区域。仅在配了 S3 凭据时写入环境文件 |
 
 ### 2.4 agent-runner、ops_agent 与 Restic
@@ -251,6 +253,7 @@ role tag 与目录名完全相同，`site.yml` 只按下列顺序表达依赖，
 | 10 | `agent_runner` | Node/npm 可用；人工完成独立 Codex OAuth 登录；具体任务出现后才首次验收 service |
 | 11 | `ops_agent` | Node/npm 可用；Gateway token 已写入 Vault；之后人工完成 ChatGPT/Codex OAuth 登录 |
 | 12 | `restic` | 仓库地址和 vault 密码已填写 |
+| 13 | `copilot` | Node.js 22 已由 `paseo` 装好；安装后人工 `copilot login --device-code`。**跑在管理员账号下**，与 `agent_runner`/`ops_agent` 那两个剥掉提权能力的 agent 账号不是同一类边界 |
 
 不得创建第二套细分 tag。交互门禁通过布尔变量与清单表达，避免 `paseo:install` 一类带冒号 tag 在不同调用方式中的歧义。
 
@@ -267,6 +270,7 @@ role tag 与目录名完全相同，`site.yml` 只按下列顺序表达依赖，
 - `restic` 的仓库存在性判定必须用 `restic cat config` 的退出码（10 = 仓库不存在，12 = 密码错误），不得匹配英文错误文本——文本随版本与 locale 变化。因此 role 必须先断言 restic ≥ 0.17.1，否则判定会静默失效。
 - `cloudflared` 不得使用 `cloudflared service install`：该命令需要 `creates:` 才幂等，而 `creates:` 会让 unit 存在后永不重跑，vault 中轮换 token 后本机不再收敛。token 文件与 unit 一律由 Ansible 的 `copy`/`template` 管理，二者都 `notify` 重启；token 只走 `--token-file`，不得进入 `ExecStart` 文本或命令行。
 - `docker` 必须读取并递归合并现有 `/etc/docker/daemon.json`，保留契约外已有键；不得整体覆盖。
+- `copilot` 刻意跑在**管理员账号**下，因为它是人工交互工具。管理员有 sudo，因此它与 `agent-runner`、`solar` 那两个刻意剥掉提权能力的账号**不是同一类边界**。若将来要让 Copilot 无人值守运行，必须先搬到专用账号并按 `agent_runner` 的模式约束，不得直接给 timer。其认证只走交互式 OAuth device flow，不得使用 `COPILOT_GITHUB_TOKEN`/`GH_TOKEN`/`GITHUB_TOKEN` 这类长期静态 token——与其余三处 agent 接入一致。本机没有运行中的 secret-service，token 会以明文落在 `~/.copilot/`；该目录在 `0700` 的管理员家目录内，其他 agent 账号无法进入，且 `/home` 不在 Restic 备份范围内。
 - Paseo web UI 的连接表单默认值（`localhost` / `6767` / 不加密）在「经 Cloudflare 域名远程访问」这个场景下**三项全错**：对外端口是 443 不是 6767（Cloudflare 不暴露 origin 端口），必须勾 SSL，且必须填人工设置的 daemon 密码。参数不对时报错是 `无法连接到 tcp://localhost:6767 / code 1006` —— 那是表单回落到默认值后连本机失败的产物，**不指向真实原因**。排查这类问题必须用浏览器控制台的裸 WebSocket 走通全链路并读服务端关闭码（`4401 Password required` = 链路全通只差密码），不能只看 daemon 侧计数器：计数器为零同时符合「被中间层挡掉」与「客户端压根没发」两种情况。详见交互清单 C3。
 - **restic 对不存在的备份路径返回退出码 0 并静默跳过**（实测 0.18.0）。因此备份包装脚本必须在调用 `restic backup` 之前逐个校验 `nuc_restic_backup_paths` 中的路径，缺失即失败。否则任何一个路径消失（目录改名、`ops_agent` 被关掉、role 调整）都会让备份继续每晚报 `ok`，而那部分数据已不在保护范围内——与「连错仓库、备份照样成功」同类。缩减备份范围时应同时修改 `nuc_restic_backup_paths`，而不是让脚本容忍缺失。
 - 渲染 shell 脚本的 `template` 任务必须带 `validate: /bin/sh -n %s`。语法错误的脚本写进去之后，只有等 timer 真正触发时才暴露，届时只能看到 `status=2/INVALIDARGUMENT`，而备份可能已经连着几晚没跑。同类校验：sshd 配置用 `sshd -t`，`daemon.json` 用 `python3 -m json.tool`。

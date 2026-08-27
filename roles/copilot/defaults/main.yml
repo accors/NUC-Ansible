@@ -1,0 +1,20 @@
+---
+# copilot 只重述共享契约中本 role 使用的变量。
+nuc_admin_user: CHANGE_ME
+
+# GitHub Copilot CLI 的 npm 包名。
+nuc_copilot_package: "@github/copilot"
+
+# 版本 pin。为 latest 时必须省略 npm 的 version 参数——community.general.npm 与
+# `npm install pkg@version` 都会拿字面量 "latest" 与已安装版本做字符串比对，
+# 永远匹配不上，导致每次运行都重装并报 changed（已固化陷阱第 11 条）。
+nuc_copilot_version: latest
+
+# 安装进管理员自己的 npm prefix，与 Paseo CLI 同一个位置，不装进 /usr/local。
+# /usr/local 是留给 agent-runner 与 ops 那两个系统账号的；管理员的交互式工具
+# 不需要 root 权限就能安装和升级。
+#
+# 变量名沿用 paseo role 的声明（CONVENTIONS 第 2 节允许 role 重述自己使用的
+# 契约变量，默认值必须一致）——它描述的本来就是同一个目录，另起一个名字会
+# 让两处各自漂移。
+nuc_paseo_npm_prefix_relative: .local/npm

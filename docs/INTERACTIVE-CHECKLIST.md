@@ -193,6 +193,30 @@
   连 `OPEN` 都没有才轮到怀疑 Cloudflare。**不要只看 daemon 侧的计数器**——
   计数器为零同时符合「被中间层挡掉」和「客户端压根没发」两种情况，分不清。
 
+### C4. Copilot CLI：管理员账号的 GitHub OAuth 登录
+
+- [ ] 运行 `--tags copilot`。它依赖 `paseo` 装好的 Node.js 22，所以排在其后。
+- [ ] **人工：以管理员身份登录**（NUC 上没有浏览器，必须用 device code）：
+
+  ```bash
+  copilot login --device-code
+  ```
+
+  会给出一个码，在你自己的浏览器里完成 GitHub 授权。
+- [ ] **不要使用 `COPILOT_GITHUB_TOKEN` / `GH_TOKEN` / `GITHUB_TOKEN` 环境变量。**
+  本项目其余三处 agent 接入一律走交互式 OAuth，不接受长期静态 token；用环境变量
+  等于在这台机器上留下一个不会过期、不经人确认的 GitHub 凭据。
+- [ ] **知悉 token 的落盘位置。** Copilot 优先写系统凭据库，本机没有运行中的
+  secret-service（无桌面、无用户 DBus 会话），因此按官方回落逻辑 token 会以
+  **明文**存入 `~/.copilot/`。已实测确认这个目录在 `0700 accors:accors` 的家目录
+  内、`agent-runner` 与 `solar` 都无法 traverse、且 `/home` 不在
+  `nuc_restic_backup_paths` 内。**若将来把 `/home` 加入备份范围，必须同时把
+  `~/.copilot` 加进 `nuc_restic_excludes`**，与 `**/.codex/auth.json` 同理。
+- [ ] **边界须知：Copilot 跑在有 sudo 的管理员账号下。** 这与 `agent-runner`、
+  `solar` 那两个刻意剥掉提权能力的账号不同，是为交互式使用做的取舍。
+  **不要给它加 timer 或 service。** 需要无人值守运行时，先按 `agent_runner`
+  的模式建专用账号，再谈自动化。
+
 ## D. Cloudflare 外部入口：`cloudflared` 之前
 
 - [ ] **人工：在 Cloudflare Dashboard 接入域名**（PDF 10.3-10.5）。

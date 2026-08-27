@@ -47,3 +47,9 @@
     - role: restic
       tags:
         - restic
+    # copilot 排在最后：它依赖 paseo 安装的 Node.js 22，而没有任何 role 依赖它。
+    # 刻意跑在管理员账号下（交互式工具），因此与 agent_runner / ops_agent
+    # 那两个剥掉提权能力的 agent 账号不是同一类边界，见 role 内注释。
+    - role: copilot
+      tags:
+        - copilot

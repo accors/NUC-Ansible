@@ -1,0 +1,165 @@
+---
+# copilot —— 管理员账号的 GitHub Copilot CLI（交互式使用）。
+#
+# 刻意跑在管理员 accors 下：这是人工交互工具，不是无人值守的自动化。
+# 注意 accors 有 sudo，因此它与 agent-runner / solar 那两个刻意剥掉提权能力的
+# agent 账号不是同一类边界。若将来要让它无人值守地跑，必须先搬到专用账号。
+#
+# 依赖 Node.js 22（由 paseo role 经 NodeSource 安装），因此排在 paseo 之后。
+
+- name: 校验管理员变量非空
+  ansible.builtin.assert:
+    that:
+      - (nuc_admin_user | default('') | trim) not in ['', 'CHANGE_ME']
+    fail_msg: nuc_admin_user 必须在 group_vars/all/local.yml 中填写真实管理员账号。
+    quiet: true
+
+- name: 探测管理员的 passwd 条目
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ nuc_admin_user }}"
+    fail_key: false
+  register: _copilot_admin_passwd
+  failed_when: false
+  changed_when: false
+
+- name: 在管理员不存在时明确失败
+  ansible.builtin.fail:
+    msg: >-
+      未能从 getent passwd 探测管理员 {{ nuc_admin_user }}。
+  when: nuc_admin_user not in (ansible_facts.getent_passwd | default({}))
+
+- name: 导出管理员 home 运行时事实
+  ansible.builtin.set_fact:
+    _copilot_admin_home: "{{ ansible_facts.getent_passwd[nuc_admin_user][4] }}"
+
+- name: 组装管理员 npm 运行环境
+  ansible.builtin.set_fact:
+    _copilot_env:
+      HOME: "{{ _copilot_admin_home }}"
+      PATH: "{{ _copilot_admin_home }}/{{ nuc_paseo_npm_prefix_relative }}/bin:/usr/local/bin:/usr/bin:/bin"
+
+# check_mode: false —— 只读探测。check 模式下被跳过的 command 注册的是
+# rc=0、stdout=''，伪装成「命令成功且无输出」，下游只看 rc 会误判
+# （CONVENTIONS 第 6 节）。
+- name: 检查 Node.js 主版本
+  ansible.builtin.command:
+    argv: [node, --version]
+  become: true
+  become_user: "{{ nuc_admin_user }}"
+  environment: "{{ _copilot_env }}"
+  register: _copilot_node_version
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Node.js 缺失或低于 22 时明确失败
+  ansible.builtin.fail:
+    msg: >-
+      Copilot CLI 需要 Node.js 22 或更高版本，当前探测结果为
+      "{{ _copilot_node_version.stdout | default('(未安装)') | trim }}"。
+      Node 由 paseo role 经 NodeSource 安装，请先运行 --tags paseo。
+  when: >-
+    _copilot_node_version.rc != 0 or
+    ((_copilot_node_version.stdout | default('') | trim | regex_replace('^v', '')).split('.')[0] | int) < 22
+
+- name: 检查管理员已安装的 Copilot CLI
+  ansible.builtin.command:
+    argv:
+      - npm
+      - list
+      - --global
+      - --depth=0
+      - --json
+      - "{{ nuc_copilot_package }}"
+  become: true
+  become_user: "{{ nuc_admin_user }}"
+  environment: "{{ _copilot_env }}"
+  register: _copilot_status
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+# version 为 latest 时省略 @version：npm 会拿字面量 "latest" 与已安装版本做
+# 字符串比对，永远匹配不上，导致每次重装并报 changed（陷阱第 11 条）。
+- name: 以管理员安装 Copilot CLI
+  ansible.builtin.command:
+    argv:
+      - npm
+      - install
+      - --global
+      - "{{ nuc_copilot_package if nuc_copilot_version == 'latest' else nuc_copilot_package ~ '@' ~ nuc_copilot_version }}"
+  become: true
+  become_user: "{{ nuc_admin_user }}"
+  environment: "{{ _copilot_env }}"
+  when: >-
+    not ansible_check_mode and
+    (_copilot_status.rc != 0 or
+    (
+      nuc_copilot_version != 'latest' and
+      (_copilot_status.stdout | default('{}') | from_json).get('dependencies', {}).get(nuc_copilot_package, {}).get('version', '')
+      != nuc_copilot_version
+    ))
+  changed_when: true
+
+# follow: true —— npm 全局安装装出来的是符号链接（CONVENTIONS 第 6 节）。
+- name: 检查 Copilot 可执行文件
+  ansible.builtin.stat:
+    path: "{{ _copilot_admin_home }}/{{ nuc_paseo_npm_prefix_relative }}/bin/copilot"
+    follow: true
+  register: _copilot_bin
+
+- name: Copilot 安装后仍找不到可执行文件时失败
+  ansible.builtin.fail:
+    msg: >-
+      npm 安装后仍未在
+      {{ _copilot_admin_home }}/{{ nuc_paseo_npm_prefix_relative }}/bin/copilot
+      找到可执行文件，请检查 npm 输出与管理员 npm prefix。
+  when:
+    - not ansible_check_mode
+    - not (_copilot_bin.stat.exists and _copilot_bin.stat.isreg and _copilot_bin.stat.executable)
+
+- name: 记录已安装的 Copilot 版本
+  ansible.builtin.command:
+    argv: ["{{ _copilot_admin_home }}/{{ nuc_paseo_npm_prefix_relative }}/bin/copilot", --version]
+  become: true
+  become_user: "{{ nuc_admin_user }}"
+  environment: "{{ _copilot_env }}"
+  register: _copilot_installed_version
+  changed_when: false
+  check_mode: false
+  when: not ansible_check_mode
+
+- name: 显示已安装的 Copilot 版本
+  ansible.builtin.debug:
+    msg: "Copilot CLI: {{ _copilot_installed_version.stdout | default('') | trim }}"
+  when: not ansible_check_mode
+
+# 登录态只做提示，不做硬门禁：codex / tailscale / ops_agent 那几道门禁存在，
+# 是因为它们后面有 service、timer 或 daemon 依赖登录态，未登录会静默跑错。
+# Copilot 是纯交互工具，没有 unit、没有 timer、没有任何下游依赖它，未登录的
+# 唯一后果是你下次用它时它自己让你登录。为此让整个 play 失败不成比例。
+#
+# copilot 没有 status 或 logout 子命令（实测 1.0.80 的 --help），因此只能探测
+# 凭据目录是否存在。这台机器没有运行中的 secret-service（无桌面、无用户 DBus
+# 会话），按官方文档的回落逻辑 token 会以明文写入 ~/.copilot/。
+- name: 探测 Copilot 登录态
+  ansible.builtin.stat:
+    path: "{{ _copilot_admin_home }}/.copilot"
+  register: _copilot_credential_dir
+  check_mode: false
+
+- name: 提示以管理员完成 GitHub OAuth 登录
+  ansible.builtin.debug:
+    msg:
+      - "Copilot CLI 尚未登录。以 {{ nuc_admin_user }} 身份运行："
+      - "  copilot login --device-code"
+      - "NUC 上没有浏览器，--device-code 会给出一个码，在你自己的浏览器里授权。"
+      - "不要使用 COPILOT_GITHUB_TOKEN / GH_TOKEN / GITHUB_TOKEN 环境变量方式："
+      - "本项目的其余三处 agent 接入一律走交互式 OAuth，不接受长期静态 token。"
+      - "注意：本机没有运行中的 secret-service，token 会以明文存入 ~/.copilot/。"
+      - "该目录位于 0700 的管理员家目录内，agent-runner 与 solar 都无法进入，"
+      - "且 /home 不在 Restic 备份范围内。"
+  when:
+    - not ansible_check_mode
+    - not _copilot_credential_dir.stat.exists
