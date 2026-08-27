@@ -205,9 +205,14 @@
     - not ansible_check_mode
     - (_agent_runner_npm_bin | length) > 0
 
+# follow: true 必须加：npm 全局安装装出来的是符号链接，实测
+# /usr/local/bin/<pkg> -> ../lib/node_modules/...（同 /usr/bin/npm 本身）。
+# stat 默认不跟随链接会得到 isreg=False，而下面的判定要求 isreg，
+# 会把一个完全可用的可执行文件判成「不存在或不可执行」。
 - name: 检查系统路径 Codex 可执行文件
   ansible.builtin.stat:
     path: /usr/local/bin/codex
+    follow: true
   register: _agent_runner_codex_stat
 
 - name: 在正常执行模式确认 Codex 已安装到契约路径

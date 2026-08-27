@@ -76,9 +76,15 @@
     (nuc_codex_admin_bin | default('') | trim | length) == 0 or
     (nuc_codex_admin_bin_dir | default('') | trim | length) == 0
 
+# follow: true 必须加。官方安装脚本装出来的 ~/.local/bin/codex 是符号链接，
+# 指向 packages/standalone/current/bin/codex（current 再指向具体版本目录，
+# 这是它做版本切换的方式）。stat 默认不跟随链接，于是 isreg=False，
+# 而下面的判定要求 isreg，会把一个完全可用的 codex 判成「不是可执行文件」。
+# 实测该链接：exists=True、executable=True、isreg=False、islnk=True。
 - name: 检查上游 Codex 可执行文件
   ansible.builtin.stat:
     path: "{{ nuc_codex_admin_bin }}"
+    follow: true
   register: _paseo_codex_bin_stat
 
 - name: 在 Codex 可执行文件不存在时明确失败

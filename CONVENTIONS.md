@@ -260,6 +260,7 @@ role tag 与目录名完全相同，`site.yml` 只按下列顺序表达依赖，
 - `restic` 的仓库存在性判定必须用 `restic cat config` 的退出码（10 = 仓库不存在，12 = 密码错误），不得匹配英文错误文本——文本随版本与 locale 变化。因此 role 必须先断言 restic ≥ 0.17.1，否则判定会静默失效。
 - `cloudflared` 不得使用 `cloudflared service install`：该命令需要 `creates:` 才幂等，而 `creates:` 会让 unit 存在后永不重跑，vault 中轮换 token 后本机不再收敛。token 文件与 unit 一律由 Ansible 的 `copy`/`template` 管理，二者都 `notify` 重启；token 只走 `--token-file`，不得进入 `ExecStart` 文本或命令行。
 - `docker` 必须读取并递归合并现有 `/etc/docker/daemon.json`，保留契约外已有键；不得整体覆盖。
+- 用 `ansible.builtin.stat` 判定**可执行文件**时必须写 `follow: true`。npm 全局安装与 Codex 官方安装脚本装出来的都是符号链接（实测 `/usr/local/bin/<pkg>` → `../lib/node_modules/…`，`~/.local/bin/codex` → `packages/standalone/current/bin/codex`），`stat` 默认不跟随链接会得到 `isreg=False`，而 `isreg` 判定会把一个完全可用的可执行文件判成缺失。apt 装的二进制是常规文件，加 `follow: true` 也无害。
 - `base` 必须先写入 Debian 官方 APT 源再做任何 apt 操作。用完整 DVD ISO 离线安装且跳过网络镜像时，安装器会在装完后注释掉 cdrom 源，系统里一个可用源都不剩。
 - **`cache_valid_time` 只比对 `/var/lib/apt/lists` 的目录 mtime，不看目录里有没有内容。** 空目录只要 mtime 够新（DVD 装机后正是如此），`apt` 模块就判定缓存有效、跳过 update 并报 `ok`，而列表自始至终是空的；随后 `full-upgrade` 报 `ok`、装包报 `No package matching 'curl' is available` —— 这条错误指向包名，和真正的原因完全对不上。因此 `base` 必须在 update 之后**实测**包列表非空，为空时以 `cache_valid_time: 0` 强制刷新，复查仍为空才失败。已实测复现并验证自愈。
 - 任何会被渲染进配置文件的环境相关变量，其消费方 role 必须在写文件之前断言它不是占位值。`nuc_access_hostname` 由 `paseo` 拦（它进 `daemon.hostnames`，占位值会让 Access 路径的 Host 校验失败，而现象像「连接被拒绝」）；`nuc_hostname` 由 `base` 拦；两个 token 与 Restic 仓库/密码分别由 `cloudflared`、`ops_agent`、`restic` 拦。`nuc_tailscale_ipv4` 不需另拦——`tailscale` 已用实测地址与它比对。
