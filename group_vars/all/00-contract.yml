@@ -206,10 +206,9 @@ nuc_restic_backup_paths:
   - /srv
   - /etc/ssh
   - /etc/systemd/system
-  # 整个 workspace 目录，而不是逐个文件：这里的内容由运行时（而非 Ansible）决定，
-  # 逐个列文件会在对方不再生成某个文件时把备份整体判失败 —— 备份包装器对缺失
-  # 路径是硬失败，那是刻意的（restic 对不存在的路径返回 0 并静默产出残缺快照）。
-  - /var/lib/openclaw-ops-agent/workspace
+  # ops workspace 曾在此列出。ops_agent 停用后目录已删除，而备份包装器对缺失路径
+  # 是硬失败（刻意如此：restic 对不存在的路径返回 0 并静默产出残缺快照），
+  # 留着会让每晚备份必然失败。重新启用 ops_agent 时要把它加回来。
 nuc_restic_excludes:
   - "**/node_modules"
   - /srv/worktrees
