@@ -226,5 +226,10 @@ nuc_restic_status_helper: /usr/local/sbin/agent-restic-status
 nuc_restic_initialize_repository: false
 # 首次 init 后用 `restic cat config` 记下仓库 ID 填在这里（建议写进 local.yml）。
 # 留空表示不校验仓库身份。
-nuc_restic_expected_repository_id: ""
+# nuc_restic_expected_repository_id 刻意不在此处赋值。
+#
+# 它是首次 init 后由 `restic cat config` 实测得到的本机值。main.yml 排在
+# local.yml 之后加载，这里给了值就会静默覆盖 local.yml，导致仓库身份校验
+# 永远处于"未设置、跳过校验"状态——而这道校验的作用恰恰是防止静默换库。
+# 安全兜底在 roles/restic/defaults/main.yml（空字符串，跳过校验）。
 nuc_restic_enable_timer: true
