@@ -23,6 +23,7 @@
     group: root
     mode: "0644"
     force: false
+  register: _docker_apt_key
 
 - name: 配置 Docker 官方 Debian deb822 仓库
   ansible.builtin.template:
@@ -31,10 +32,27 @@
     owner: root
     group: root
     mode: "0644"
+  register: _docker_apt_repo
 
-- name: 更新 Docker APT 仓库索引
+# 无条件 update_cache 每次都报 changed，第二遍 --check --diff 永远不干净，
+# 违反契约的幂等要求。但也不能简单加 cache_valid_time —— 它只比对
+# /var/lib/apt/lists 的目录 mtime，不看里面有没有 Docker 的索引（同 base 的坑）。
+# 因此显式探测 Docker 自己的索引文件，缺失时才刷新。
+- name: 探测 Docker 仓库索引是否已下载
+  ansible.builtin.find:
+    paths: /var/lib/apt/lists
+    patterns: "download.docker.com*_Packages*"
+    file_type: file
+  register: _docker_apt_lists
+  changed_when: false
+
+- name: 仓库变更或索引缺失时刷新 APT 索引  # noqa: no-handler
   ansible.builtin.apt:
     update_cache: true
+    cache_valid_time: 0
+  when: >-
+    _docker_apt_key.changed or _docker_apt_repo.changed
+    or _docker_apt_lists.matched == 0
 
 - name: 按契约版本安装 Docker 软件包
   ansible.builtin.apt:
